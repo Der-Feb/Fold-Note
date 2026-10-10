@@ -47,7 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   // Register spike commands
-  registerSpikeCommands(context, foldingProvider, decorationProvider);
+  registerSpikeCommands(context, foldingProvider, decorationProvider, codeLensProvider);
 
   // Dispose providers on deactivation
   context.subscriptions.push(foldingProvider, decorationProvider, codeLensProvider);
