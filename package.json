@@ -1,8 +1,48 @@
 {
-    "scripts": {
-        
-    },
-    "devDependencies": {
-        "@types/vscode": "^1.107.0"
-    }
+  "name": "fold-note",
+  "displayName": "FoldNote",
+  "description": "Fold code sections, attach notes, and highlight passages — without modifying your source files.",
+  "version": "0.0.1",
+  "publisher": "der-feb",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Der-Feb/fold-note"
+  },
+  "categories": ["Other"],
+  "keywords": ["fold", "notes", "highlight", "annotations", "code reading"],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "foldNote.helloWorld",
+        "title": "FoldNote: Hello World"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTests.js",
+    "compile-tests": "tsc -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.17.6",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^8.14.0",
+    "@typescript-eslint/parser": "^8.14.0",
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.14.0",
+    "mocha": "^10.8.2",
+    "typescript": "^5.6.3"
+  }
 }
