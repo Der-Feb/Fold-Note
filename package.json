@@ -22,6 +22,18 @@
       {
         "command": "foldNote.helloWorld",
         "title": "FoldNote: Hello World"
+      },
+      {
+        "command": "foldNote.spikeFold",
+        "title": "FoldNote Spike: Fold lines 1–5"
+      },
+      {
+        "command": "foldNote.spikeUnfold",
+        "title": "FoldNote Spike: Unfold lines 1–5"
+      },
+      {
+        "command": "foldNote.spikeRefresh",
+        "title": "FoldNote Spike: Refresh folding ranges"
       }
     ]
   },
@@ -29,6 +41,7 @@
     "vscode:prepublish": "npm run build",
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
+    "dev": "npm run build && code --extensionDevelopmentPath=\"$(pwd)\" --disable-extensions .",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTests.js",
     "compile-tests": "tsc -p tsconfig.test.json"
