@@ -238,3 +238,4 @@ Goal: prove the core mechanism works before building on it. Use **hardcoded** da
 - [ ] Export annotations to Markdown (a study-notes summary)
 - [ ] Search and filter in the sidebar
 - [ ] Optional sharing of annotations with teammates (would need a project file)
+- [ ] **Manual CodeLens placement** — a command that lets you add a CodeLens to any line you choose (prompt for line number, prompt for label/action). Follow-up questions to flesh out before implementing: what should clicking it do (open sidebar, run a command, show a note popup)? should it be tied to an annotation or free-floating? should it persist across sessions?
