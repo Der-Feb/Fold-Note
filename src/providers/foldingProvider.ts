@@ -39,6 +39,10 @@ export class FoldNoteProvider implements vscode.FoldingRangeProvider {
     this._onDidChange.fire();
   }
 
+  get isActive(): boolean {
+    return this._active;
+  }
+
   dispose(): void {
     this._onDidChange.dispose();
   }
