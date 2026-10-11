@@ -119,14 +119,6 @@ export function registerFoldCommands(
 
         const persist = note.trim().length > 0;
 
-        // Register range with folding provider and fold
-        foldingProvider.refresh();
-        const pos = new vscode.Position(startLine, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        await vscode.commands.executeCommand("editor.fold", {
-          selectionLines: [startLine],
-        });
-
         if (persist) {
           const anchorLine = editor.document.lineAt(startLine).text;
           const now = new Date().toISOString();
@@ -141,6 +133,28 @@ export function registerFoldCommands(
             createdAt: now,
             updatedAt: now,
           });
+        }
+
+        // Refresh provider AFTER adding to store so the range is available
+        // when VS Code re-queries folding ranges
+        foldingProvider.refresh();
+
+        // Wait for VS Code to re-query folding ranges before folding
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        const pos = new vscode.Position(startLine, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+
+        // Try folding at the exact line — if it doesn't collapse our range,
+        // VS Code may have picked a different range; we retry once.
+        await vscode.commands.executeCommand("editor.fold", {
+          selectionLines: [startLine],
+        });
+
+        // Give VS Code a moment to apply the fold
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        if (persist) {
           treeProvider.refresh();
           codeLensProvider.refresh();
           vscode.window.showInformationMessage(
