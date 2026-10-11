@@ -1,29 +1,11 @@
 import * as vscode from "vscode";
-import * as crypto from "crypto";
 import { AnnotationRange } from "../model/annotation";
 import { store } from "./store";
-
-/**
- * Computes a short hash of a string (8 hex chars from SHA-256).
- * Used as an anchor hash to detect drift when the file changes outside VS Code.
- */
-export function computeAnchorHash(lineText: string): string {
-  return crypto.createHash("sha256").update(lineText).digest("hex").slice(0, 8);
-}
+import { computeAnchorHash } from "../utils/anchorHash";
 
 /**
  * Listens to document changes and updates annotation ranges to follow edits.
  * Also detects drift when a file is opened after external changes.
- *
- * Rules:
- *  - Change entirely above a range  → shift start and end by line delta
- *  - Change entirely below a range  → no change
- *  - Change inside a range          → grow or shrink the range
- *  - Change straddling a boundary   → mark conflicted
- *  - Range collapses to < 2 lines   → mark conflicted
- *
- * Drift detection (on file open):
- *  - If anchorHash is set and doesn't match current start-line text → drifted
  */
 export class RangeTracker implements vscode.Disposable {
   private readonly _disposables: vscode.Disposable[] = [];
@@ -39,13 +21,19 @@ export class RangeTracker implements vscode.Disposable {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Document change — shift or conflict annotations
+  // ---------------------------------------------------------------------------
+
   private _onDocumentChanged(e: vscode.TextDocumentChangeEvent): void {
-    const uri = e.document.uri;
-    if (uri.scheme !== "file") {
+    if (e.document.uri.scheme !== "file") {
+      return;
+    }
+    if (e.contentChanges.length === 0) {
       return;
     }
 
-    const filePath = this._resolveFilePath(uri);
+    const filePath = this._resolveFilePath(e.document.uri);
     if (!filePath) {
       return;
     }
@@ -57,7 +45,7 @@ export class RangeTracker implements vscode.Disposable {
 
     for (const ann of annotations) {
       if (ann.status === "conflicted") {
-        continue; // already broken, skip
+        continue;
       }
 
       let range = { ...ann.range };
@@ -78,9 +66,7 @@ export class RangeTracker implements vscode.Disposable {
         range.start.line !== ann.range.start.line ||
         range.end.line !== ann.range.end.line
       ) {
-        // Range shifted — update it
         if (range.end.line - range.start.line < 1) {
-          // Collapsed to a single line — conflict
           store.update(ann.id, { status: "conflicted" });
         } else {
           store.update(ann.id, { range });
@@ -88,6 +74,10 @@ export class RangeTracker implements vscode.Disposable {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Document open — detect drift via anchor hash
+  // ---------------------------------------------------------------------------
 
   private _onDocumentOpened(doc: vscode.TextDocument): void {
     if (doc.uri.scheme !== "file") {
@@ -105,21 +95,13 @@ export class RangeTracker implements vscode.Disposable {
     }
 
     for (const ann of annotations) {
-      if (ann.status !== "active") {
-        continue; // only flag active annotations as drifted
-      }
-      if (!ann.anchorHash) {
-        continue; // no hash to compare
-      }
-
-      const startLine = ann.range.start.line;
-      if (startLine >= doc.lineCount) {
-        // Line no longer exists — definitely drifted
-        store.update(ann.id, { status: "drifted" });
+      if (ann.status !== "active" || !ann.anchorHash) {
         continue;
       }
 
-      const currentHash = computeAnchorHash(doc.lineAt(startLine).text);
+      const lineIdx = Math.min(ann.range.start.line, doc.lineCount - 1);
+      const currentHash = computeAnchorHash(doc.lineAt(lineIdx).text);
+
       if (currentHash !== ann.anchorHash) {
         store.update(ann.id, { status: "drifted" });
       }
@@ -154,8 +136,6 @@ function applyChange(
 ): AnnotationRange | "conflict" {
   const changeStart = change.range.start.line;
   const changeEnd = change.range.end.line;
-
-  // How many lines the edit adds or removes
   const newLineCount = (change.text.match(/\n/g) ?? []).length;
   const removedLines = changeEnd - changeStart;
   const lineDelta = newLineCount - removedLines;
@@ -163,12 +143,12 @@ function applyChange(
   const annStart = range.start.line;
   const annEnd = range.end.line;
 
-  // ── Change is entirely below the annotation ──────────────────────────────
+  // Change entirely below annotation
   if (changeStart > annEnd) {
-    return range; // no effect
+    return range;
   }
 
-  // ── Change is entirely above the annotation ───────────────────────────────
+  // Change entirely above annotation
   if (changeEnd < annStart) {
     return {
       start: { line: annStart + lineDelta, character: 0 },
@@ -176,25 +156,22 @@ function applyChange(
     };
   }
 
-  // ── Change starts above and ends inside the annotation ───────────────────
-  // (straddles the start boundary)
+  // Straddles start boundary
   if (changeStart < annStart && changeEnd >= annStart && changeEnd <= annEnd) {
     return "conflict";
   }
 
-  // ── Change starts inside the annotation and ends below ───────────────────
-  // (straddles the end boundary)
+  // Straddles end boundary
   if (changeStart >= annStart && changeStart <= annEnd && changeEnd > annEnd) {
     return "conflict";
   }
 
-  // ── Change straddles both boundaries (wraps entire annotation) ───────────
+  // Wraps entire annotation
   if (changeStart < annStart && changeEnd > annEnd) {
     return "conflict";
   }
 
-  // ── Change is entirely inside the annotation ─────────────────────────────
-  // Grow or shrink the end line by the delta
+  // Entirely inside annotation
   return {
     start: { line: annStart, character: 0 },
     end: { line: annEnd + lineDelta, character: 0 },
