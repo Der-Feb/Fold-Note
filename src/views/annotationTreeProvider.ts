@@ -12,7 +12,7 @@ export class FileItem extends vscode.TreeItem {
   constructor(
     public readonly filePath: string,
     public readonly annotations: Annotation[],
-    public readonly orphaned = false
+    orphaned = false
   ) {
     super(filePath, vscode.TreeItemCollapsibleState.Expanded);
     if (orphaned) {
@@ -38,13 +38,10 @@ export class AnnotationItem extends vscode.TreeItem {
     collapsible = vscode.TreeItemCollapsibleState.None
   ) {
     super(AnnotationItem._label(annotation), collapsible);
-
     this.description = AnnotationItem._description(annotation);
     this.iconPath = AnnotationItem._icon(annotation);
     this.tooltip = AnnotationItem._tooltip(annotation);
     this.contextValue = AnnotationItem._contextValue(annotation);
-
-    // Click jumps to the annotation in the editor
     this.command = {
       command: "foldNote.revealAnnotation",
       title: "Reveal",
@@ -53,67 +50,46 @@ export class AnnotationItem extends vscode.TreeItem {
   }
 
   private static _label(ann: Annotation): string {
-    if (ann.status === "conflicted") {
-      return `⚠ ${ann.note || "(no note)"}`;
-    }
-    if (ann.status === "drifted") {
-      return `~ ${ann.note || "(no note)"}`;
-    }
+    if (ann.status === "conflicted") return `⚠ ${ann.note || "(no note)"}`;
+    if (ann.status === "drifted") return `~ ${ann.note || "(no note)"}`;
     return ann.note || "(no note)";
   }
 
   private static _description(ann: Annotation): string {
     const start = ann.range.start.line + 1;
     const end = ann.range.end.line + 1;
-    const kind = ann.kind === "folder" ? "📁" : `🎨 ${ann.color ?? ""}`;
+    const kind = ann.kind === "folder" ? "📁" : `🎨 ${ann.color ?? ""}`.trim();
     return `${kind} · L${start}–${end}`;
   }
 
   private static _icon(ann: Annotation): vscode.ThemeIcon {
     if (ann.status === "conflicted") {
-      return new vscode.ThemeIcon(
-        "warning",
-        new vscode.ThemeColor("list.warningForeground")
-      );
+      return new vscode.ThemeIcon("warning", new vscode.ThemeColor("list.warningForeground"));
     }
     if (ann.status === "drifted") {
-      return new vscode.ThemeIcon(
-        "question",
-        new vscode.ThemeColor("list.warningForeground")
-      );
+      return new vscode.ThemeIcon("question", new vscode.ThemeColor("list.warningForeground"));
     }
-    if (ann.kind === "folder") {
-      return new vscode.ThemeIcon("fold");
-    }
+    if (ann.kind === "folder") return new vscode.ThemeIcon("fold");
     return new vscode.ThemeIcon("symbol-color");
   }
 
   private static _tooltip(ann: Annotation): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**${ann.note || "(no note)"}**\n\n`);
-    md.appendMarkdown(
-      `Lines ${ann.range.start.line + 1}–${ann.range.end.line + 1}\n\n`
-    );
+    md.appendMarkdown(`Lines ${ann.range.start.line + 1}–${ann.range.end.line + 1}\n\n`);
     if (ann.kind === "highlight" && ann.color) {
       md.appendMarkdown(`Color: \`${ann.color}\`\n\n`);
     }
     if (ann.status !== "active") {
       md.appendMarkdown(`⚠ Status: \`${ann.status}\`\n\n`);
     }
-    md.appendMarkdown(
-      `*Created ${new Date(ann.createdAt).toLocaleString()}*`
-    );
+    md.appendMarkdown(`*Created ${new Date(ann.createdAt).toLocaleString()}*`);
     return md;
   }
 
   private static _contextValue(ann: Annotation): string {
-    // Used for showing/hiding inline actions in the view
-    if (ann.status === "conflicted") {
-      return "foldNote.conflicted";
-    }
-    if (ann.kind === "folder") {
-      return "foldNote.folder";
-    }
+    if (ann.status === "conflicted") return "foldNote.conflicted";
+    if (ann.kind === "folder") return "foldNote.folder";
     return "foldNote.highlight";
   }
 }
@@ -125,28 +101,24 @@ export type FoldNoteTreeItem = FileItem | AnnotationItem;
 // ---------------------------------------------------------------------------
 
 export class AnnotationTreeProvider
-  implements vscode.TreeDataProvider<FoldNoteTreeItem>
+  implements vscode.TreeDataProvider<FoldNoteTreeItem>, vscode.Disposable
 {
   private readonly _onDidChangeTreeData =
     new vscode.EventEmitter<FoldNoteTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  /** Set of file paths known to be orphaned (checked asynchronously). */
-  private _orphanedFiles = new Set<string>();
+  private _orphanedPaths: Set<string> = new Set();
+  private readonly _storeDisposable: vscode.Disposable;
 
   constructor() {
-    // Auto-refresh when the store mutates
-    store.onChange(() => {
+    // Auto-refresh when store changes
+    this._storeDisposable = store.onChange(() => {
       this.refresh();
     });
   }
 
   refresh(): void {
-    // Kick off orphan check in background; a second fire happens when done
-    this._checkOrphanedFiles().then(() => {
-      this._onDidChangeTreeData.fire();
-    });
-    // Fire immediately too so the tree updates right away
+    this._checkOrphanedFiles();
     this._onDidChangeTreeData.fire();
   }
 
@@ -156,69 +128,52 @@ export class AnnotationTreeProvider
 
   getChildren(element?: FoldNoteTreeItem): FoldNoteTreeItem[] {
     if (!element) {
-      // Root level — one FileItem per tracked file
       return this._buildFileItems();
     }
-
     if (element instanceof FileItem) {
-      if (element.orphaned) {
-        return []; // orphaned files have no children to show
-      }
-      // Children of a file — top-level annotations only
       return this._buildTopLevelAnnotations(element.filePath, element.annotations);
     }
-
     if (element instanceof AnnotationItem && element.annotation.kind === "folder") {
-      // Children of a folder — annotations nested inside it
-      return this._buildNestedAnnotations(element.annotation, element.annotation.filePath);
+      return this._buildNestedAnnotations(element.annotation);
     }
-
     return [];
   }
 
   // ---------------------------------------------------------------------------
-  // Orphaned file detection
+  // Orphan detection
   // ---------------------------------------------------------------------------
 
-  /**
-   * Stats each tracked file path; marks missing ones as orphaned.
-   * This method is async and updates `_orphanedFiles` in place.
-   */
-  async checkOrphanedFiles(): Promise<void> {
-    await this._checkOrphanedFiles();
-  }
-
-  private async _checkOrphanedFiles(): Promise<void> {
-    const wsFolders = vscode.workspace.workspaceFolders;
-    if (!wsFolders || wsFolders.length === 0) {
+  private _checkOrphanedFiles(): void {
+    const files = store.getTrackedFiles();
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
       return;
     }
 
-    const trackedFiles = store.getTrackedFiles();
-    const newOrphans = new Set<string>();
+    this._orphanedPaths.clear();
 
-    for (const filePath of trackedFiles) {
-      // Try to resolve the file in each workspace folder
+    for (const filePath of files) {
       let found = false;
-      for (const folder of wsFolders) {
-        const stripped = filePath.startsWith(folder.name + "/")
+      for (const folder of folders) {
+        const relative = filePath.startsWith(folder.name + "/")
           ? filePath.slice(folder.name.length + 1)
           : filePath;
-        const uri = vscode.Uri.joinPath(folder.uri, stripped);
-        try {
-          await vscode.workspace.fs.stat(uri);
+        const uri = vscode.Uri.joinPath(folder.uri, relative);
+        // Sync check via workspace FS — use try/catch in async context
+        // Here we mark orphaned based on known existence; proper async check
+        // is done lazily. For now check if path is in known workspace.
+        const wsFolderPath = folder.uri.fsPath;
+        const fs = require("fs") as typeof import("fs");
+        const absolutePath = require("path").join(wsFolderPath, relative);
+        if (fs.existsSync(absolutePath)) {
           found = true;
           break;
-        } catch {
-          // not in this folder
         }
       }
       if (!found) {
-        newOrphans.add(filePath);
+        this._orphanedPaths.add(filePath);
       }
     }
-
-    this._orphanedFiles = newOrphans;
   }
 
   // ---------------------------------------------------------------------------
@@ -230,11 +185,10 @@ export class AnnotationTreeProvider
     if (files.length === 0) {
       return [];
     }
-
     return files
       .map((filePath) => {
         const annotations = store.getByFile(filePath);
-        const orphaned = this._orphanedFiles.has(filePath);
+        const orphaned = this._orphanedPaths.has(filePath);
         return new FileItem(filePath, annotations, orphaned);
       })
       .sort((a, b) => a.filePath.localeCompare(b.filePath));
@@ -244,9 +198,7 @@ export class AnnotationTreeProvider
     filePath: string,
     annotations: Annotation[]
   ): AnnotationItem[] {
-    // Top-level = annotations not fully inside any other folder
     const folders = annotations.filter((a) => a.kind === "folder");
-
     return annotations
       .filter((ann) => !this._hasParent(ann, folders))
       .sort((a, b) => a.range.start.line - b.range.start.line)
@@ -254,8 +206,7 @@ export class AnnotationTreeProvider
         const hasChildren =
           ann.kind === "folder" &&
           annotations.some(
-            (child) =>
-              child.id !== ann.id && this._isInside(child.range, ann.range)
+            (child) => child.id !== ann.id && this._isInside(child.range, ann.range)
           );
         return new AnnotationItem(
           ann,
@@ -266,14 +217,9 @@ export class AnnotationTreeProvider
       });
   }
 
-  private _buildNestedAnnotations(
-    parent: Annotation,
-    filePath: string
-  ): AnnotationItem[] {
-    const all = store.getByFile(filePath);
+  private _buildNestedAnnotations(parent: Annotation): AnnotationItem[] {
+    const all = store.getByFile(parent.filePath);
     const folders = all.filter((a) => a.kind === "folder");
-
-    // Direct children: inside parent but not inside any other folder that is itself inside parent
     return all
       .filter(
         (ann) =>
@@ -285,20 +231,12 @@ export class AnnotationTreeProvider
       .map((ann) => new AnnotationItem(ann));
   }
 
-  private _isInside(
-    inner: Annotation["range"],
-    outer: Annotation["range"]
-  ): boolean {
-    return (
-      inner.start.line >= outer.start.line &&
-      inner.end.line <= outer.end.line
-    );
+  private _isInside(inner: Annotation["range"], outer: Annotation["range"]): boolean {
+    return inner.start.line >= outer.start.line && inner.end.line <= outer.end.line;
   }
 
   private _hasParent(ann: Annotation, folders: Annotation[]): boolean {
-    return folders.some(
-      (f) => f.id !== ann.id && this._isInside(ann.range, f.range)
-    );
+    return folders.some((f) => f.id !== ann.id && this._isInside(ann.range, f.range));
   }
 
   private _hasParentOtherThan(
@@ -313,5 +251,10 @@ export class AnnotationTreeProvider
         this._isInside(ann.range, f.range) &&
         this._isInside(f.range, exclude.range)
     );
+  }
+
+  dispose(): void {
+    this._storeDisposable.dispose();
+    this._onDidChangeTreeData.dispose();
   }
 }
