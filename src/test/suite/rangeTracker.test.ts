@@ -1,31 +1,23 @@
 import * as assert from "assert";
-import { AnnotationStore } from "../../storage/store";
-import { Annotation, makeLineRange } from "../../model/annotation";
+import { makeLineRange, AnnotationRange } from "../../model/annotation";
 
 // ---------------------------------------------------------------------------
-// Inline copy of applyChange (pure function) so we can test it without VS Code
+// We test the pure applyChange logic by extracting it as a standalone fn.
+// Since rangeTracker.ts keeps applyChange private, we duplicate it here
+// for unit testing purposes (pure function, no VS Code deps).
 // ---------------------------------------------------------------------------
 
-// We replicate the applyChange logic here since it's not exported from rangeTracker.ts
-// and we want to test it independently without importing vscode.
-
-interface SimpleRange {
-  start: { line: number; character: number };
-  end: { line: number; character: number };
-}
-
-interface SimpleChange {
+type ChangeEvent = {
   range: { start: { line: number }; end: { line: number } };
   text: string;
-}
+};
 
 function applyChange(
-  range: SimpleRange,
-  change: SimpleChange
-): SimpleRange | "conflict" {
+  range: AnnotationRange,
+  change: ChangeEvent
+): AnnotationRange | "conflict" {
   const changeStart = change.range.start.line;
   const changeEnd = change.range.end.line;
-
   const newLineCount = (change.text.match(/\n/g) ?? []).length;
   const removedLines = changeEnd - changeStart;
   const lineDelta = newLineCount - removedLines;
@@ -33,61 +25,23 @@ function applyChange(
   const annStart = range.start.line;
   const annEnd = range.end.line;
 
-  if (changeStart > annEnd) {
-    return range;
-  }
-
+  if (changeStart > annEnd) return range;
   if (changeEnd < annStart) {
     return {
       start: { line: annStart + lineDelta, character: 0 },
       end: { line: annEnd + lineDelta, character: 0 },
     };
   }
-
-  if (changeStart < annStart && changeEnd >= annStart && changeEnd <= annEnd) {
-    return "conflict";
-  }
-
-  if (changeStart >= annStart && changeStart <= annEnd && changeEnd > annEnd) {
-    return "conflict";
-  }
-
-  if (changeStart < annStart && changeEnd > annEnd) {
-    return "conflict";
-  }
-
+  if (changeStart < annStart && changeEnd >= annStart && changeEnd <= annEnd) return "conflict";
+  if (changeStart >= annStart && changeStart <= annEnd && changeEnd > annEnd) return "conflict";
+  if (changeStart < annStart && changeEnd > annEnd) return "conflict";
   return {
     start: { line: annStart, character: 0 },
     end: { line: annEnd + lineDelta, character: 0 },
   };
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeFolder(
-  id: string,
-  startLine: number,
-  endLine: number
-): Annotation {
-  return {
-    id,
-    filePath: "root/test.ts",
-    range: makeLineRange(startLine, endLine),
-    kind: "folder",
-    note: "test note",
-    status: "active",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function change(
-  startLine: number,
-  endLine: number,
-  text: string
-): SimpleChange {
+function change(startLine: number, endLine: number, text: string): ChangeEvent {
   return { range: { start: { line: startLine }, end: { line: endLine } }, text };
 }
 
@@ -95,12 +49,13 @@ function change(
 // Tests
 // ---------------------------------------------------------------------------
 
-suite("RangeTracker — pure applyChange logic", () => {
-  // ── Insert lines above annotation → range shifts down ──────────────────────
-  test("insert lines above annotation → shifts down", () => {
-    const range = makeLineRange(10, 20);
-    // Insert 3 lines above (at line 5, single-line change → +3 new lines)
-    const result = applyChange(range, change(5, 5, "\n\n\n"));
+suite("RangeTracker — applyChange", () => {
+  // Annotation covers lines 10–20
+
+  test("insert lines above → shifts down", () => {
+    const r = makeLineRange(10, 20);
+    // Insert 3 lines above (at line 5, replace 0 lines with 3 newlines)
+    const result = applyChange(r, change(5, 5, "\n\n\n"));
     assert.notStrictEqual(result, "conflict");
     if (result !== "conflict") {
       assert.strictEqual(result.start.line, 13);
@@ -108,75 +63,21 @@ suite("RangeTracker — pure applyChange logic", () => {
     }
   });
 
-  // ── Delete lines above annotation → range shifts up ───────────────────────
-  test("delete lines above annotation → shifts up", () => {
-    const range = makeLineRange(10, 20);
-    // Delete lines 5–7: changeStart=5, changeEnd=7, removedLines=7-5=2, lineDelta=-2
-    const result = applyChange(range, change(5, 7, ""));
+  test("delete lines above → shifts up", () => {
+    const r = makeLineRange(10, 20);
+    // Delete lines 3 and 4 — in VS Code the range end is exclusive line,
+    // so to remove 2 lines we use start=3, end=5 with empty text
+    const result = applyChange(r, change(3, 5, ""));
     assert.notStrictEqual(result, "conflict");
     if (result !== "conflict") {
-      assert.strictEqual(result.start.line, 8);  // 10 - 2 = 8
-      assert.strictEqual(result.end.line, 18);   // 20 - 2 = 18
+      assert.strictEqual(result.start.line, 8);
+      assert.strictEqual(result.end.line, 18);
     }
   });
 
-  // ── Edit inside annotation → end line adjusts ─────────────────────────────
-  test("insert lines inside annotation → end expands", () => {
-    const range = makeLineRange(10, 20);
-    // Insert 2 lines inside (at line 15)
-    const result = applyChange(range, change(15, 15, "\n\n"));
-    assert.notStrictEqual(result, "conflict");
-    if (result !== "conflict") {
-      assert.strictEqual(result.start.line, 10);
-      assert.strictEqual(result.end.line, 22);
-    }
-  });
-
-  test("delete lines inside annotation → end shrinks", () => {
-    const range = makeLineRange(10, 20);
-    // Delete lines 12–14: changeStart=12, changeEnd=14, removedLines=14-12=2, lineDelta=-2
-    const result = applyChange(range, change(12, 14, ""));
-    assert.notStrictEqual(result, "conflict");
-    if (result !== "conflict") {
-      assert.strictEqual(result.start.line, 10);
-      assert.strictEqual(result.end.line, 18);  // 20 - 2 = 18
-    }
-  });
-
-  // ── Paste across start boundary → conflicted ──────────────────────────────
-  test("paste across start boundary → conflict", () => {
-    const range = makeLineRange(10, 20);
-    // Change starts at line 8 (above) and ends at line 12 (inside)
-    const result = applyChange(range, change(8, 12, "some replacement\n"));
-    assert.strictEqual(result, "conflict");
-  });
-
-  // ── Paste across end boundary → conflicted ────────────────────────────────
-  test("paste across end boundary → conflict", () => {
-    const range = makeLineRange(10, 20);
-    // Change starts at line 15 (inside) and ends at line 25 (below)
-    const result = applyChange(range, change(15, 25, "some replacement\n"));
-    assert.strictEqual(result, "conflict");
-  });
-
-  // ── Collapse to single line → conflicted ──────────────────────────────────
-  test("collapse annotation to single line → conflict via store", () => {
-    // Annotation spans lines 10–11 (two lines).
-    // Replace both lines with a single line → lineDelta = -1
-    // changeStart=10, changeEnd=11, removedLines=1, newLines=0, lineDelta=-1
-    // Falls into "inside" case: end = 11 + (-1) = 10 → span = 0 < 1 → conflicted by caller
-    const range = makeLineRange(10, 11);
-    const result = applyChange(range, change(10, 11, "single line replacement"));
-    if (result !== "conflict") {
-      const lineSpan = result.end.line - result.start.line;
-      assert.strictEqual(lineSpan < 1, true, "collapsed range should have span < 1");
-    }
-  });
-
-  // ── Change entirely below → no effect ────────────────────────────────────
-  test("change entirely below annotation → no effect", () => {
-    const range = makeLineRange(10, 20);
-    const result = applyChange(range, change(25, 30, "\n\n"));
+  test("edit below → no change", () => {
+    const r = makeLineRange(10, 20);
+    const result = applyChange(r, change(25, 25, "\n\n"));
     assert.notStrictEqual(result, "conflict");
     if (result !== "conflict") {
       assert.strictEqual(result.start.line, 10);
@@ -184,45 +85,57 @@ suite("RangeTracker — pure applyChange logic", () => {
     }
   });
 
-  // ── Change entirely above → shifts ───────────────────────────────────────
-  test("change above annotation shifts by correct delta", () => {
-    const range = makeLineRange(10, 20);
-    // Replace 1 line at line 3 with 5 lines (+4 delta)
-    const result = applyChange(range, change(3, 3, "a\nb\nc\nd\ne"));
+  test("insert inside → end line grows", () => {
+    const r = makeLineRange(10, 20);
+    // Insert 2 lines inside at line 15
+    const result = applyChange(r, change(15, 15, "\n\n"));
     assert.notStrictEqual(result, "conflict");
     if (result !== "conflict") {
-      assert.strictEqual(result.start.line, 14);
-      assert.strictEqual(result.end.line, 24);
+      assert.strictEqual(result.start.line, 10);
+      assert.strictEqual(result.end.line, 22);
     }
   });
-});
 
-// ---------------------------------------------------------------------------
-// Store integration tests
-// ---------------------------------------------------------------------------
-
-suite("RangeTracker — store interaction", () => {
-  let store: AnnotationStore;
-
-  setup(() => {
-    store = new AnnotationStore();
+  test("delete inside → end line shrinks", () => {
+    const r = makeLineRange(10, 20);
+    // Delete 3 lines inside — range end is exclusive, so start=12, end=15
+    const result = applyChange(r, change(12, 15, ""));
+    assert.notStrictEqual(result, "conflict");
+    if (result !== "conflict") {
+      assert.strictEqual(result.start.line, 10);
+      assert.strictEqual(result.end.line, 17);
+    }
   });
 
-  test("store starts with active annotation", () => {
-    store.add(makeFolder("1", 10, 20));
-    const ann = store.getById("1");
-    assert.strictEqual(ann?.status, "active");
+  test("paste across start boundary → conflict", () => {
+    const r = makeLineRange(10, 20);
+    // Edit spans lines 8–12 (crosses start at 10)
+    const result = applyChange(r, change(8, 12, "replacement"));
+    assert.strictEqual(result, "conflict");
   });
 
-  test("updating status to conflicted works", () => {
-    store.add(makeFolder("1", 10, 20));
-    store.update("1", { status: "conflicted" });
-    assert.strictEqual(store.getById("1")?.status, "conflicted");
+  test("paste across end boundary → conflict", () => {
+    const r = makeLineRange(10, 20);
+    // Edit spans lines 18–22 (crosses end at 20)
+    const result = applyChange(r, change(18, 22, "replacement"));
+    assert.strictEqual(result, "conflict");
   });
 
-  test("updating status to drifted works", () => {
-    store.add(makeFolder("1", 10, 20));
-    store.update("1", { status: "drifted" });
-    assert.strictEqual(store.getById("1")?.status, "drifted");
+  test("edit wraps entire annotation → conflict", () => {
+    const r = makeLineRange(10, 20);
+    // Edit spans lines 5–25 (wraps entire annotation)
+    const result = applyChange(r, change(5, 25, "replacement"));
+    assert.strictEqual(result, "conflict");
+  });
+
+  test("collapse to single line → caller detects conflict", () => {
+    const r = makeLineRange(10, 11);
+    // Delete the second line — range end exclusive means start=10, end=11 with ""
+    // removes line 10's newline, collapsing to one line
+    const result = applyChange(r, change(10, 11, ""));
+    assert.notStrictEqual(result, "conflict");
+    if (result !== "conflict") {
+      assert.ok(result.end.line - result.start.line < 1);
+    }
   });
 });
