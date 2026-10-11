@@ -5,31 +5,30 @@ import { store } from "../storage/store";
  * Shows a CodeLens above every active annotation in the current document.
  * Reads directly from the store so line numbers always reflect the latest
  * tracked ranges after edits.
- *
- * Chapter 6 additions:
- *  - Respects `foldNote.enableCodeLens` setting (default true).
- *  - `toggleVisibility()` toggles a per-session override for the active file.
- *  - Uses `foldNote.codeLensClicked` (not the spike command) for store annotations.
  */
 export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
-  /** Session-level visibility toggle (affects ALL files). */
   private _visible = true;
 
   provideCodeLenses(
     document: vscode.TextDocument,
     _token: vscode.CancellationToken
   ): vscode.CodeLens[] {
-    if (document.uri.scheme !== "file") {
+    if (!this._visible) {
       return [];
     }
 
-    // Check the enableCodeLens setting
-    const cfg = vscode.workspace.getConfiguration("foldNote");
-    const settingEnabled = cfg.get<boolean>("enableCodeLens", true);
-    if (!settingEnabled || !this._visible) {
+    // Check user setting
+    const enabled = vscode.workspace
+      .getConfiguration("foldNote")
+      .get<boolean>("enableCodeLens", true);
+    if (!enabled) {
+      return [];
+    }
+
+    if (document.uri.scheme !== "file") {
       return [];
     }
 
@@ -43,8 +42,6 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
       return [];
     }
 
-    const prefix = cfg.get<string>("badgePrefix", "📝 ");
-
     return annotations
       .filter((ann) => ann.range.start.line < document.lineCount)
       .map((ann) => {
@@ -55,10 +52,13 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
         let title: string;
         if (ann.status === "conflicted") {
           title = `⚠ conflict · "${ann.note}" · click to manage`;
+        } else if (ann.status === "drifted") {
+          title = `~ may have moved · "${ann.note}" · L${startLine + 1}–${endLine + 1}`;
         } else if (ann.kind === "folder") {
-          title = `${prefix}${ann.note} · L${startLine + 1}–${endLine + 1}`;
+          title = `📝 ${ann.note} · L${startLine + 1}–${endLine + 1}`;
         } else {
-          title = `🎨 ${ann.color ?? "highlight"} · ${ann.note || ""} · L${startLine + 1}–${endLine + 1}`;
+          const colorLabel = ann.color ? `${ann.color} ` : "";
+          title = `🎨 ${colorLabel}${ann.note || ""} · L${startLine + 1}–${endLine + 1}`.trim();
         }
 
         return new vscode.CodeLens(range, {
@@ -69,7 +69,7 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
       });
   }
 
-  /** Toggle session-level visibility of all CodeLenses. */
+  /** Toggle CodeLens visibility (used by Toggle All Notes command). */
   toggleVisibility(): void {
     this._visible = !this._visible;
     this._onDidChange.fire();
@@ -83,23 +83,12 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
     this._onDidChange.fire();
   }
 
-  // Keep these for backward compat with spike commands (no-ops now since
-  // store is the source of truth)
-  activateFolder(_startLine: number, _endLine: number): void {
-    this._onDidChange.fire();
-  }
-  activateHighlight(_startLine: number, _endLine: number, _color: string): void {
-    this._onDidChange.fire();
-  }
-  clearFolder(): void {
-    this._onDidChange.fire();
-  }
-  clearHighlight(): void {
-    this._onDidChange.fire();
-  }
-  clearAll(): void {
-    this._onDidChange.fire();
-  }
+  // Kept for spike backward compat — these are now no-ops
+  activateFolder(_s: number, _e: number): void { this._onDidChange.fire(); }
+  activateHighlight(_s: number, _e: number, _c: string): void { this._onDidChange.fire(); }
+  clearFolder(): void { this._onDidChange.fire(); }
+  clearHighlight(): void { this._onDidChange.fire(); }
+  clearAll(): void { this._onDidChange.fire(); }
 
   private _resolveFilePath(uri: vscode.Uri): string | undefined {
     const folders = vscode.workspace.workspaceFolders;
