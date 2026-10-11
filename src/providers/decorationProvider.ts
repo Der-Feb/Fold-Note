@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 
 /**
- * Chapter 1 spike: draws a hardcoded note label at the end of line 0
- * (the first line of our hardcoded folded range) using a decoration.
+ * Draws a note label at the end of the fold start line.
+ * Accepts a dynamic line number so it works with any range.
  */
 export class DecorationProvider implements vscode.Disposable {
   private readonly _decorationType: vscode.TextEditorDecorationType;
@@ -10,25 +10,25 @@ export class DecorationProvider implements vscode.Disposable {
   constructor() {
     this._decorationType = vscode.window.createTextEditorDecorationType({
       after: {
-        contentText: "  📝 Hardcoded spike note",
+        contentText: "  📝 Spike note",
         color: new vscode.ThemeColor("descriptionForeground"),
         fontStyle: "italic",
       },
     });
   }
 
-  /** Apply the spike decoration to the given editor. */
-  apply(editor: vscode.TextEditor): void {
-    // Decorate the end of line 0 (the fold start line)
-    const line = editor.document.lineAt(0);
-    const range = new vscode.Range(
-      line.range.end,
-      line.range.end
-    );
-    editor.setDecorations(this._decorationType, [range]);
+  /** Apply the note label to the end of `startLine` in the editor. */
+  apply(editor: vscode.TextEditor, startLine: number): void {
+    if (startLine >= editor.document.lineCount) {
+      return;
+    }
+    const line = editor.document.lineAt(startLine);
+    editor.setDecorations(this._decorationType, [
+      new vscode.Range(line.range.end, line.range.end),
+    ]);
   }
 
-  /** Remove all decorations from the given editor. */
+  /** Remove all note label decorations. */
   clear(editor: vscode.TextEditor): void {
     editor.setDecorations(this._decorationType, []);
   }

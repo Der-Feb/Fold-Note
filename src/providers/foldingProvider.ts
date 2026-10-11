@@ -1,46 +1,51 @@
 import * as vscode from "vscode";
 
 /**
- * Chapter 1 spike: returns a single hardcoded folding range (lines 0–4)
- * only when active. Calling clear() removes the range and refreshes so
- * VS Code drops both the fold and the CodeLens.
+ * Spike folding provider.
+ * Accepts a dynamic range instead of a hardcoded one, so we can fold
+ * any range coming from a selection or manual input.
  */
 export class FoldNoteProvider implements vscode.FoldingRangeProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeFoldingRanges = this._onDidChange.event;
 
-  private _active = false;
+  private _range: vscode.FoldingRange | undefined;
 
   provideFoldingRanges(
     _document: vscode.TextDocument,
     _context: vscode.FoldingContext,
     _token: vscode.CancellationToken
   ): vscode.FoldingRange[] {
-    if (!this._active) {
-      return [];
-    }
-    return [new vscode.FoldingRange(0, 4, vscode.FoldingRangeKind.Region)];
+    return this._range ? [this._range] : [];
   }
 
-  /** Activate the hardcoded range and tell VS Code to re-query. */
-  activate(): void {
-    this._active = true;
+  /** Register a range and tell VS Code to re-query. */
+  activate(startLine: number, endLine: number): void {
+    this._range = new vscode.FoldingRange(
+      startLine,
+      endLine,
+      vscode.FoldingRangeKind.Region
+    );
     this._onDidChange.fire();
   }
 
-  /** Remove the range and tell VS Code to re-query (clears fold + CodeLens). */
+  /** Remove the range and tell VS Code to re-query. */
   clear(): void {
-    this._active = false;
+    this._range = undefined;
     this._onDidChange.fire();
   }
 
-  /** Fire the change event without toggling state (for the refresh spike command). */
+  /** Re-fire without changing state. */
   refresh(): void {
     this._onDidChange.fire();
   }
 
   get isActive(): boolean {
-    return this._active;
+    return this._range !== undefined;
+  }
+
+  get activeRange(): vscode.FoldingRange | undefined {
+    return this._range;
   }
 
   dispose(): void {

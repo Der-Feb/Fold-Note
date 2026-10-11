@@ -4,13 +4,14 @@ type SpikeKind = "folder" | "highlight";
 
 interface SpikeEntry {
   kind: SpikeKind;
-  color?: string; // highlights only
+  startLine: number;
+  endLine: number;
+  color?: string;
 }
 
 /**
- * Chapter 1 spike: shows a hardcoded CodeLens above line 0 for each
- * active spike entry (fold and/or highlight). Both folders and highlights
- * get a CodeLens — they are the same annotation type, only the kind differs.
+ * Shows a CodeLens at the actual start line of each active spike entry.
+ * Both folders and highlights get a CodeLens.
  */
 export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
@@ -22,53 +23,49 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
     document: vscode.TextDocument,
     _token: vscode.CancellationToken
   ): vscode.CodeLens[] {
-    if (this._entries.length === 0 || document.lineCount < 5) {
+    if (this._entries.length === 0) {
       return [];
     }
 
-    const range = new vscode.Range(0, 0, 0, 0);
+    return this._entries
+      .filter((e) => e.startLine < document.lineCount)
+      .map((entry) => {
+        const range = new vscode.Range(entry.startLine, 0, entry.startLine, 0);
+        const label =
+          entry.kind === "folder"
+            ? `📝 Spike note · L${entry.startLine + 1}–${entry.endLine + 1}`
+            : `🎨 ${entry.color ?? "highlight"} · L${entry.startLine + 1}–${entry.endLine + 1}`;
 
-    return this._entries.map((entry) => {
-      const label =
-        entry.kind === "folder"
-          ? "📝 Spike note · L1–5  (click to test)"
-          : `🎨 Spike highlight · ${entry.color ?? "color"} · L1–5  (click to test)`;
-
-      return new vscode.CodeLens(range, {
-        title: label,
-        command: "foldNote.spikeCodeLensClicked",
-        arguments: [entry.kind],
+        return new vscode.CodeLens(range, {
+          title: label,
+          command: "foldNote.spikeCodeLensClicked",
+          arguments: [entry.kind],
+        });
       });
-    });
   }
 
-  /** Register a fold CodeLens. */
-  activateFolder(): void {
+  activateFolder(startLine: number, endLine: number): void {
     this._removeKind("folder");
-    this._entries.push({ kind: "folder" });
+    this._entries.push({ kind: "folder", startLine, endLine });
     this._onDidChange.fire();
   }
 
-  /** Register a highlight CodeLens. */
-  activateHighlight(color: string): void {
+  activateHighlight(startLine: number, endLine: number, color: string): void {
     this._removeKind("highlight");
-    this._entries.push({ kind: "highlight", color });
+    this._entries.push({ kind: "highlight", startLine, endLine, color });
     this._onDidChange.fire();
   }
 
-  /** Remove the fold CodeLens. */
   clearFolder(): void {
     this._removeKind("folder");
     this._onDidChange.fire();
   }
 
-  /** Remove the highlight CodeLens. */
   clearHighlight(): void {
     this._removeKind("highlight");
     this._onDidChange.fire();
   }
 
-  /** Remove all CodeLenses. */
   clearAll(): void {
     this._entries = [];
     this._onDidChange.fire();
