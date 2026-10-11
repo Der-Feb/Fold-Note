@@ -1,6 +1,7 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import { Annotation } from "../model/annotation";
 import { StoredData, STORAGE_KEY, emptyStoredData, migrate } from "./schema";
+import { SimpleEventEmitter } from "../utils/eventEmitter";
 
 /** Debounce window before writing to workspaceState (ms). */
 const DEBOUNCE_MS = 500;
@@ -13,12 +14,12 @@ const DEBOUNCE_MS = 500;
  * - Writes are debounced; a final flush happens on deactivate.
  * - Fires `onChange` after every mutation so listeners can react.
  */
-export class AnnotationStore implements vscode.Disposable {
+export class AnnotationStore {
   private _data: StoredData = emptyStoredData();
   private _context: vscode.ExtensionContext | undefined;
   private _saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-  private readonly _onChange = new vscode.EventEmitter<void>();
+  private readonly _onChange = new SimpleEventEmitter<void>();
   /** Fires after every mutation (add, update, remove, removeFile, clearAll). */
   readonly onChange = this._onChange.event;
 
@@ -26,14 +27,12 @@ export class AnnotationStore implements vscode.Disposable {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /** Load persisted data into memory. Call once during extension activation. */
   load(context: vscode.ExtensionContext): void {
     this._context = context;
     const raw = context.workspaceState.get<unknown>(STORAGE_KEY);
     this._data = migrate(raw);
   }
 
-  /** Flush any pending save immediately. Call during extension deactivation. */
   async flush(): Promise<void> {
     if (this._saveTimer !== undefined) {
       clearTimeout(this._saveTimer);
@@ -51,12 +50,10 @@ export class AnnotationStore implements vscode.Disposable {
   // Queries
   // ---------------------------------------------------------------------------
 
-  /** All annotations for a given workspace-relative file path. */
   getByFile(filePath: string): Annotation[] {
     return this._data.files[filePath] ?? [];
   }
 
-  /** A single annotation by ID, or undefined if not found. */
   getById(id: string): Annotation | undefined {
     for (const annotations of Object.values(this._data.files)) {
       const found = annotations.find((a) => a.id === id);
@@ -67,7 +64,6 @@ export class AnnotationStore implements vscode.Disposable {
     return undefined;
   }
 
-  /** All file paths that have at least one annotation. */
   getTrackedFiles(): string[] {
     return Object.keys(this._data.files);
   }
@@ -76,7 +72,6 @@ export class AnnotationStore implements vscode.Disposable {
   // Mutations
   // ---------------------------------------------------------------------------
 
-  /** Add a new annotation. Replaces any existing annotation with the same ID. */
   add(annotation: Annotation): void {
     const list = this._data.files[annotation.filePath] ?? [];
     const idx = list.findIndex((a) => a.id === annotation.id);
@@ -90,7 +85,6 @@ export class AnnotationStore implements vscode.Disposable {
     this._onChange.fire();
   }
 
-  /** Update fields on an existing annotation. No-op if ID not found. */
   update(
     id: string,
     changes: Partial<Omit<Annotation, "id" | "filePath">>
@@ -110,7 +104,6 @@ export class AnnotationStore implements vscode.Disposable {
     }
   }
 
-  /** Remove an annotation by ID. */
   remove(id: string): void {
     for (const [path, list] of Object.entries(this._data.files)) {
       const idx = list.findIndex((a) => a.id === id);
@@ -126,7 +119,6 @@ export class AnnotationStore implements vscode.Disposable {
     }
   }
 
-  /** Remove all annotations for a given file path. */
   removeFile(filePath: string): void {
     if (this._data.files[filePath]) {
       delete this._data.files[filePath];
@@ -135,7 +127,6 @@ export class AnnotationStore implements vscode.Disposable {
     }
   }
 
-  /** Remove every annotation in the workspace. */
   clearAll(): void {
     this._data = emptyStoredData();
     this._scheduleSave();
