@@ -24,24 +24,32 @@
         "title": "FoldNote: Hello World"
       },
       {
-        "command": "foldNote.spikeFold",
-        "title": "FoldNote Spike: Fold lines 1–5"
+        "command": "foldNote.spikeFoldSelection",
+        "title": "FoldNote Spike: Fold — From Selection"
+      },
+      {
+        "command": "foldNote.spikeFoldInput",
+        "title": "FoldNote Spike: Fold — From Input"
+      },
+      {
+        "command": "foldNote.spikeHighlightSelection",
+        "title": "FoldNote Spike: Highlight — From Selection"
+      },
+      {
+        "command": "foldNote.spikeHighlightInput",
+        "title": "FoldNote Spike: Highlight — From Input"
       },
       {
         "command": "foldNote.spikeUnfold",
-        "title": "FoldNote Spike: Unfold lines 1–5"
+        "title": "FoldNote Spike: Unfold"
+      },
+      {
+        "command": "foldNote.spikeClearHighlight",
+        "title": "FoldNote Spike: Clear Highlight"
       },
       {
         "command": "foldNote.spikeRefresh",
         "title": "FoldNote Spike: Refresh folding ranges"
-      },
-      {
-        "command": "foldNote.spikeHighlight",
-        "title": "FoldNote Spike: Highlight lines 1–5"
-      },
-      {
-        "command": "foldNote.spikeClearHighlight",
-        "title": "FoldNote Spike: Clear highlights"
       }
     ]
   },
