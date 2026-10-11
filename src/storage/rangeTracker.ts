@@ -1,9 +1,19 @@
 import * as vscode from "vscode";
-import { Annotation, AnnotationRange } from "../model/annotation";
+import * as crypto from "crypto";
+import { AnnotationRange } from "../model/annotation";
 import { store } from "./store";
 
 /**
+ * Computes a short hash of a string (8 hex chars from SHA-256).
+ * Used as an anchor hash to detect drift when the file changes outside VS Code.
+ */
+export function computeAnchorHash(lineText: string): string {
+  return crypto.createHash("sha256").update(lineText).digest("hex").slice(0, 8);
+}
+
+/**
  * Listens to document changes and updates annotation ranges to follow edits.
+ * Also detects drift when a file is opened after external changes.
  *
  * Rules:
  *  - Change entirely above a range  → shift start and end by line delta
@@ -11,6 +21,9 @@ import { store } from "./store";
  *  - Change inside a range          → grow or shrink the range
  *  - Change straddling a boundary   → mark conflicted
  *  - Range collapses to < 2 lines   → mark conflicted
+ *
+ * Drift detection (on file open):
+ *  - If anchorHash is set and doesn't match current start-line text → drifted
  */
 export class RangeTracker implements vscode.Disposable {
   private readonly _disposables: vscode.Disposable[] = [];
@@ -19,6 +32,9 @@ export class RangeTracker implements vscode.Disposable {
     this._disposables.push(
       vscode.workspace.onDidChangeTextDocument((e) => {
         this._onDocumentChanged(e);
+      }),
+      vscode.workspace.onDidOpenTextDocument((doc) => {
+        this._onDocumentOpened(doc);
       })
     );
   }
@@ -29,7 +45,6 @@ export class RangeTracker implements vscode.Disposable {
       return;
     }
 
-    // Find the workspace-relative path for this document
     const filePath = this._resolveFilePath(uri);
     if (!filePath) {
       return;
@@ -70,6 +85,43 @@ export class RangeTracker implements vscode.Disposable {
         } else {
           store.update(ann.id, { range });
         }
+      }
+    }
+  }
+
+  private _onDocumentOpened(doc: vscode.TextDocument): void {
+    if (doc.uri.scheme !== "file") {
+      return;
+    }
+
+    const filePath = this._resolveFilePath(doc.uri);
+    if (!filePath) {
+      return;
+    }
+
+    const annotations = store.getByFile(filePath);
+    if (annotations.length === 0) {
+      return;
+    }
+
+    for (const ann of annotations) {
+      if (ann.status !== "active") {
+        continue; // only flag active annotations as drifted
+      }
+      if (!ann.anchorHash) {
+        continue; // no hash to compare
+      }
+
+      const startLine = ann.range.start.line;
+      if (startLine >= doc.lineCount) {
+        // Line no longer exists — definitely drifted
+        store.update(ann.id, { status: "drifted" });
+        continue;
+      }
+
+      const currentHash = computeAnchorHash(doc.lineAt(startLine).text);
+      if (currentHash !== ann.anchorHash) {
+        store.update(ann.id, { status: "drifted" });
       }
     }
   }
