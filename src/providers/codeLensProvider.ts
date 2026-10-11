@@ -1,82 +1,90 @@
 import * as vscode from "vscode";
-
-type SpikeKind = "folder" | "highlight";
-
-interface SpikeEntry {
-  kind: SpikeKind;
-  startLine: number;
-  endLine: number;
-  color?: string;
-}
+import { store } from "../storage/store";
 
 /**
- * Shows a CodeLens at the actual start line of each active spike entry.
- * Both folders and highlights get a CodeLens.
+ * Shows a CodeLens above every active annotation in the current document.
+ * Reads directly from the store so line numbers always reflect the latest
+ * tracked ranges after edits.
  */
 export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
-  private _entries: SpikeEntry[] = [];
-
   provideCodeLenses(
     document: vscode.TextDocument,
     _token: vscode.CancellationToken
   ): vscode.CodeLens[] {
-    if (this._entries.length === 0) {
+    if (document.uri.scheme !== "file") {
       return [];
     }
 
-    return this._entries
-      .filter((e) => e.startLine < document.lineCount)
-      .map((entry) => {
-        const range = new vscode.Range(entry.startLine, 0, entry.startLine, 0);
-        const label =
-          entry.kind === "folder"
-            ? `📝 Spike note · L${entry.startLine + 1}–${entry.endLine + 1}`
-            : `🎨 ${entry.color ?? "highlight"} · L${entry.startLine + 1}–${entry.endLine + 1}`;
+    const filePath = this._resolveFilePath(document.uri);
+    if (!filePath) {
+      return [];
+    }
+
+    const annotations = store.getByFile(filePath);
+    if (annotations.length === 0) {
+      return [];
+    }
+
+    return annotations
+      .filter((ann) => ann.range.start.line < document.lineCount)
+      .map((ann) => {
+        const startLine = ann.range.start.line;
+        const endLine = ann.range.end.line;
+        const range = new vscode.Range(startLine, 0, startLine, 0);
+
+        let title: string;
+        if (ann.status === "conflicted") {
+          title = `⚠ conflict · "${ann.note}" · click to manage`;
+        } else if (ann.kind === "folder") {
+          title = `📝 ${ann.note} · L${startLine + 1}–${endLine + 1}`;
+        } else {
+          title = `🎨 ${ann.color ?? "highlight"} · ${ann.note || ""} · L${startLine + 1}–${endLine + 1}`;
+        }
 
         return new vscode.CodeLens(range, {
-          title: label,
+          title,
           command: "foldNote.spikeCodeLensClicked",
-          arguments: [entry.kind],
+          arguments: [ann.kind, ann.id],
         });
       });
-  }
-
-  activateFolder(startLine: number, endLine: number): void {
-    this._removeKind("folder");
-    this._entries.push({ kind: "folder", startLine, endLine });
-    this._onDidChange.fire();
-  }
-
-  activateHighlight(startLine: number, endLine: number, color: string): void {
-    this._removeKind("highlight");
-    this._entries.push({ kind: "highlight", startLine, endLine, color });
-    this._onDidChange.fire();
-  }
-
-  clearFolder(): void {
-    this._removeKind("folder");
-    this._onDidChange.fire();
-  }
-
-  clearHighlight(): void {
-    this._removeKind("highlight");
-    this._onDidChange.fire();
-  }
-
-  clearAll(): void {
-    this._entries = [];
-    this._onDidChange.fire();
   }
 
   refresh(): void {
     this._onDidChange.fire();
   }
 
-  private _removeKind(kind: SpikeKind): void {
-    this._entries = this._entries.filter((e) => e.kind !== kind);
+  // Keep these for backward compat with spike commands (no-ops now since
+  // store is the source of truth)
+  activateFolder(_startLine: number, _endLine: number): void {
+    this._onDidChange.fire();
+  }
+  activateHighlight(_startLine: number, _endLine: number, _color: string): void {
+    this._onDidChange.fire();
+  }
+  clearFolder(): void {
+    this._onDidChange.fire();
+  }
+  clearHighlight(): void {
+    this._onDidChange.fire();
+  }
+  clearAll(): void {
+    this._onDidChange.fire();
+  }
+
+  private _resolveFilePath(uri: vscode.Uri): string | undefined {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return undefined;
+    }
+    const folder = vscode.workspace.getWorkspaceFolder(uri);
+    if (!folder) {
+      return undefined;
+    }
+    const relative = vscode.workspace.asRelativePath(uri, false);
+    return folders.length > 1 ? `${folder.name}/${relative}` : relative;
   }
 
   dispose(): void {

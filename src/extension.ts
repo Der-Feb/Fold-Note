@@ -7,6 +7,7 @@ import { FoldNoteCodeLensProvider } from "./providers/codeLensProvider";
 import { HighlightProvider } from "./providers/highlightProvider";
 import { AnnotationTreeProvider } from "./views/annotationTreeProvider";
 import { store } from "./storage/store";
+import { RangeTracker } from "./storage/rangeTracker";
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log("FoldNote is now active.");
@@ -51,6 +52,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   treeProvider.refresh();
 
+  // --- Chapter 4: range tracker ---
+  const rangeTracker = new RangeTracker();
+
+  // Refresh sidebar and CodeLens after every document change
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument(() => {
+      treeProvider.refresh();
+      codeLensProvider.refresh();
+      foldingProvider.refresh();
+    })
+  );
+
   // --- Chapter 1 spike commands ---
   registerSpikeCommands(
     context,
@@ -65,6 +78,7 @@ export function activate(context: vscode.ExtensionContext): void {
     codeLensProvider,
     highlightProvider,
     treeView,
+    rangeTracker,
     store
   );
 }
