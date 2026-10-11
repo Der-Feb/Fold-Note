@@ -1,7 +1,7 @@
 {
   "name": "fold-note",
   "displayName": "FoldNote",
-  "description": "Fold code sections, attach notes, and highlight passages — without modifying your source files.",
+  "description": "Fold code sections, attach notes, and highlight passages \u2014 without modifying your source files.",
   "version": "0.0.1",
   "publisher": "der-feb",
   "license": "MIT",
@@ -10,8 +10,16 @@
     "type": "git",
     "url": "https://github.com/Der-Feb/fold-note"
   },
-  "categories": ["Other"],
-  "keywords": ["fold", "notes", "highlight", "annotations", "code reading"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "fold",
+    "notes",
+    "highlight",
+    "annotations",
+    "code reading"
+  ],
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -64,19 +72,19 @@
       },
       {
         "command": "foldNote.spikeFoldSelection",
-        "title": "FoldNote Spike: Fold — From Selection"
+        "title": "FoldNote Spike: Fold \u2014 From Selection"
       },
       {
         "command": "foldNote.spikeFoldInput",
-        "title": "FoldNote Spike: Fold — From Input"
+        "title": "FoldNote Spike: Fold \u2014 From Input"
       },
       {
         "command": "foldNote.spikeHighlightSelection",
-        "title": "FoldNote Spike: Highlight — From Selection"
+        "title": "FoldNote Spike: Highlight \u2014 From Selection"
       },
       {
         "command": "foldNote.spikeHighlightInput",
-        "title": "FoldNote Spike: Highlight — From Input"
+        "title": "FoldNote Spike: Highlight \u2014 From Input"
       },
       {
         "command": "foldNote.spikeUnfold",
@@ -158,7 +166,7 @@
         },
         "foldNote.badgePrefix": {
           "type": "string",
-          "default": "📝 ",
+          "default": "\ud83d\udcdd ",
           "description": "Prefix shown before fold note labels."
         }
       }
@@ -168,7 +176,7 @@
     "vscode:prepublish": "npm run build",
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
-    "dev": "npm run build && code --extensionDevelopmentPath=\"$(pwd)\" --disable-extensions .",
+    "dev": "node api.js && npm run build && code --extensionDevelopmentPath=\"$(pwd)\" --disable-extensions .",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTests.js",
     "compile-tests": "tsc -p tsconfig.test.json"
