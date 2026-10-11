@@ -17,6 +17,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // --- Chapter 0: hello world ---
   registerHelloWorld(context);
 
+  // --- Chapter 5: sidebar (created first so spike commands can reference it) ---
+  const treeProvider = new AnnotationTreeProvider();
+  const treeView = vscode.window.createTreeView("foldNote.annotationsView", {
+    treeDataProvider: treeProvider,
+    showCollapseAll: true,
+  });
+  registerSidebarCommands(context, treeProvider, treeView);
+  treeProvider.refresh();
+
   // --- Chapter 1 spike providers ---
   const foldingProvider = new FoldNoteProvider();
   const codeLensProvider = new FoldNoteCodeLensProvider();
@@ -37,22 +46,9 @@ export function activate(context: vscode.ExtensionContext): void {
     context,
     foldingProvider,
     codeLensProvider,
-    highlightProvider
+    highlightProvider,
+    treeProvider
   );
-
-  // --- Chapter 5: sidebar ---
-  const treeProvider = new AnnotationTreeProvider();
-
-  const treeView = vscode.window.createTreeView("foldNote.annotationsView", {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-
-  registerSidebarCommands(context, treeProvider, treeView);
-
-  // Refresh tree when store changes (will be triggered by future commands)
-  // For now, refresh once on activation to show any persisted annotations
-  treeProvider.refresh();
 
   context.subscriptions.push(
     foldingProvider,

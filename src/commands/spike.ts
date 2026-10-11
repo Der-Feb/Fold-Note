@@ -3,6 +3,11 @@ import { FoldNoteProvider } from "../providers/foldingProvider";
 import { FoldNoteCodeLensProvider } from "../providers/codeLensProvider";
 import { HighlightProvider, SPIKE_COLORS, SpikeColor } from "../providers/highlightProvider";
 import { rangeFromSelection, rangeFromInput, ResolvedRange } from "../utils/rangeInput";
+import { store } from "../storage/store";
+import { AnnotationTreeProvider } from "../views/annotationTreeProvider";
+import { toWorkspacePathOrWarn } from "../utils/filePath";
+import { generateId } from "../utils/uuid";
+import { makeLineRange } from "../model/annotation";
 
 /**
  * Chapter 1 spike commands — four variants:
@@ -20,7 +25,8 @@ export function registerSpikeCommands(
   context: vscode.ExtensionContext,
   foldingProvider: FoldNoteProvider,
   codeLensProvider: FoldNoteCodeLensProvider,
-  highlightProvider: HighlightProvider
+  highlightProvider: HighlightProvider,
+  treeProvider: AnnotationTreeProvider
 ): void {
   // ---------------------------------------------------------------------------
   // Shared helpers
@@ -37,15 +43,33 @@ export function registerSpikeCommands(
     editor: vscode.TextEditor,
     range: ResolvedRange
   ): Promise<void> {
+    const filePath = toWorkspacePathOrWarn(editor.document.uri);
+    if (!filePath) {
+      return;
+    }
+
     foldingProvider.activate(range.startLine, range.endLine);
     codeLensProvider.activateFolder(range.startLine, range.endLine);
 
-    // Move cursor to the start line and fold targeting exactly our range
     const pos = new vscode.Position(range.startLine, 0);
     editor.selection = new vscode.Selection(pos, pos);
     await vscode.commands.executeCommand("editor.fold", {
       selectionLines: [range.startLine],
     });
+
+    // Write to store so sidebar shows it
+    const now = new Date().toISOString();
+    store.add({
+      id: generateId(),
+      filePath,
+      range: makeLineRange(range.startLine, range.endLine),
+      kind: "folder",
+      note: `Spike fold L${range.startLine + 1}–${range.endLine + 1}`,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    treeProvider.refresh();
 
     vscode.window.showInformationMessage(
       `FoldNote spike: folded lines ${range.startLine + 1}–${range.endLine + 1}. ✅`
@@ -57,8 +81,28 @@ export function registerSpikeCommands(
     range: ResolvedRange,
     color: SpikeColor
   ): void {
+    const filePath = toWorkspacePathOrWarn(editor.document.uri);
+    if (!filePath) {
+      return;
+    }
+
     highlightProvider.apply(editor, color, range.startLine, range.endLine);
     codeLensProvider.activateHighlight(range.startLine, range.endLine, color);
+
+    // Write to store so sidebar shows it
+    const now = new Date().toISOString();
+    store.add({
+      id: generateId(),
+      filePath,
+      range: makeLineRange(range.startLine, range.endLine),
+      kind: "highlight",
+      note: `Spike highlight L${range.startLine + 1}–${range.endLine + 1}`,
+      color,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    treeProvider.refresh();
 
     vscode.window.showInformationMessage(
       `FoldNote spike: highlighted lines ${range.startLine + 1}–${range.endLine + 1} in ${color}. ✅`
@@ -197,8 +241,21 @@ export function registerSpikeCommands(
       foldingProvider.clear();
       codeLensProvider.clearFolder();
 
+      // Remove spike fold annotations from store for this file
+      const editor2 = vscode.window.activeTextEditor;
+      if (editor2) {
+        const filePath = toWorkspacePathOrWarn(editor2.document.uri);
+        if (filePath) {
+          const toRemove = store
+            .getByFile(filePath)
+            .filter((a) => a.kind === "folder" && a.note.startsWith("Spike fold"));
+          toRemove.forEach((a) => store.remove(a.id));
+          treeProvider.refresh();
+        }
+      }
+
       vscode.window.showInformationMessage(
-        "FoldNote spike: unfolded, label and CodeLens removed. ✅"
+        "FoldNote spike: unfolded, CodeLens removed. ✅"
       );
     }),
 
@@ -221,6 +278,16 @@ export function registerSpikeCommands(
       highlightProvider.clear(editor);
       codeLensProvider.clearHighlight();
 
+      // Remove spike highlight annotations from store for this file
+      const filePath = toWorkspacePathOrWarn(editor.document.uri);
+      if (filePath) {
+        const toRemove = store
+          .getByFile(filePath)
+          .filter((a) => a.kind === "highlight" && a.note.startsWith("Spike highlight"));
+        toRemove.forEach((a) => store.remove(a.id));
+        treeProvider.refresh();
+      }
+
       vscode.window.showInformationMessage(
         "FoldNote spike: highlight and CodeLens removed. ✅"
       );
@@ -237,13 +304,17 @@ export function registerSpikeCommands(
     }),
 
     // -------------------------------------------------------------------------
-    // CodeLens click handler
+    // CodeLens click handler — opens the sidebar
     // -------------------------------------------------------------------------
     vscode.commands.registerCommand(
       "foldNote.spikeCodeLensClicked",
-      (kind?: string) => {
+      async (kind?: string) => {
+        // Open the FoldNote sidebar
+        await vscode.commands.executeCommand(
+          "workbench.view.extension.foldNote"
+        );
         vscode.window.showInformationMessage(
-          `FoldNote spike: ${kind ?? "annotation"} CodeLens clicked! Will open sidebar in a future chapter. ✅`
+          `FoldNote: opened sidebar from ${kind ?? "annotation"} CodeLens. ✅`
         );
       }
     )
