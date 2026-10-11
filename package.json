@@ -108,8 +108,57 @@
         "command": "foldNote.unfoldAnnotation",
         "title": "Unfold",
         "icon": "$(fold-up)"
+      },
+      {
+        "command": "foldNote.foldSelection",
+        "title": "FoldNote: Fold Selection with Note"
+      },
+      {
+        "command": "foldNote.unfoldAtCursor",
+        "title": "FoldNote: Unfold at Cursor"
+      },
+      {
+        "command": "foldNote.toggleAllNotes",
+        "title": "FoldNote: Toggle All Notes"
+      },
+      {
+        "command": "foldNote.refreshRanges",
+        "title": "FoldNote: Refresh Ranges"
+      },
+      {
+        "command": "foldNote.codeLensClicked",
+        "title": "FoldNote: CodeLens Clicked"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "foldNote.foldSelection",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "foldNote.unfoldAtCursor",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "FoldNote",
+      "properties": {
+        "foldNote.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens indicators above annotations."
+        },
+        "foldNote.badgePrefix": {
+          "type": "string",
+          "default": "📝 ",
+          "description": "Prefix shown before fold note labels."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
