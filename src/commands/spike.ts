@@ -1,70 +1,199 @@
 import * as vscode from "vscode";
 import { FoldNoteProvider } from "../providers/foldingProvider";
-import { DecorationProvider } from "../providers/decorationProvider";
 import { FoldNoteCodeLensProvider } from "../providers/codeLensProvider";
-import { HighlightProvider } from "../providers/highlightProvider";
-
-const SPIKE_COLORS = ["yellow", "green", "red", "blue"];
+import { HighlightProvider, SPIKE_COLORS, SpikeColor } from "../providers/highlightProvider";
+import { rangeFromSelection, rangeFromInput, ResolvedRange } from "../utils/rangeInput";
 
 /**
- * Chapter 1 spike commands.
+ * Chapter 1 spike commands — four variants:
  *
- * foldNote.spikeFold             — activates the range, folds it, draws the label, shows CodeLens.
- * foldNote.spikeUnfold           — clears the range, unfolds, removes label and CodeLens.
- * foldNote.spikeRefresh          — fires the provider change event to prove re-querying works.
- * foldNote.spikeCodeLensClicked  — triggered when the CodeLens is clicked.
- * foldNote.spikeHighlight        — highlights lines 1–5 with a chosen color.
- * foldNote.spikeClearHighlight   — removes all highlight decorations.
+ * foldNote.spikeFoldSelection      — fold the active selection
+ * foldNote.spikeFoldInput          — fold a range typed by the user
+ * foldNote.spikeHighlightSelection — highlight the active selection
+ * foldNote.spikeHighlightInput     — highlight a range typed by the user
+ * foldNote.spikeUnfold             — unfold and remove all spike decorations
+ * foldNote.spikeClearHighlight     — remove highlight only
+ * foldNote.spikeRefresh            — fire the folding provider change event
+ * foldNote.spikeCodeLensClicked    — CodeLens click handler
  */
 export function registerSpikeCommands(
   context: vscode.ExtensionContext,
   foldingProvider: FoldNoteProvider,
-  decorationProvider: DecorationProvider,
   codeLensProvider: FoldNoteCodeLensProvider,
   highlightProvider: HighlightProvider
 ): void {
+  // ---------------------------------------------------------------------------
+  // Shared helpers
+  // ---------------------------------------------------------------------------
+
+  async function pickColor(): Promise<SpikeColor | undefined> {
+    const pick = await vscode.window.showQuickPick([...SPIKE_COLORS], {
+      placeHolder: "Pick a highlight color",
+    });
+    return pick as SpikeColor | undefined;
+  }
+
+  async function applyFold(
+    editor: vscode.TextEditor,
+    range: ResolvedRange
+  ): Promise<void> {
+    foldingProvider.activate(range.startLine, range.endLine);
+    codeLensProvider.activateFolder(range.startLine, range.endLine);
+
+    // Move cursor to the start line and fold targeting exactly our range
+    const pos = new vscode.Position(range.startLine, 0);
+    editor.selection = new vscode.Selection(pos, pos);
+    await vscode.commands.executeCommand("editor.fold", {
+      selectionLines: [range.startLine],
+    });
+
+    vscode.window.showInformationMessage(
+      `FoldNote spike: folded lines ${range.startLine + 1}–${range.endLine + 1}. ✅`
+    );
+  }
+
+  function applyHighlight(
+    editor: vscode.TextEditor,
+    range: ResolvedRange,
+    color: SpikeColor
+  ): void {
+    highlightProvider.apply(editor, color, range.startLine, range.endLine);
+    codeLensProvider.activateHighlight(range.startLine, range.endLine, color);
+
+    vscode.window.showInformationMessage(
+      `FoldNote spike: highlighted lines ${range.startLine + 1}–${range.endLine + 1} in ${color}. ✅`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fold — from selection
+  // ---------------------------------------------------------------------------
   context.subscriptions.push(
-    // -------------------------------------------------------------------------
-    // Fold spike
-    // -------------------------------------------------------------------------
-    vscode.commands.registerCommand("foldNote.spikeFold", async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showWarningMessage("FoldNote spike: open a file first.");
-        return;
+    vscode.commands.registerCommand(
+      "foldNote.spikeFoldSelection",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage("FoldNote: open a file first.");
+          return;
+        }
+
+        const result = rangeFromSelection(editor);
+        if (typeof result === "string") {
+          vscode.window.showWarningMessage(`FoldNote: ${result}`);
+          return;
+        }
+
+        await applyFold(editor, result);
       }
-      if (editor.document.lineCount < 5) {
-        vscode.window.showWarningMessage(
-          "FoldNote spike: file needs at least 5 lines."
-        );
-        return;
+    ),
+
+    // -------------------------------------------------------------------------
+    // Fold — from input
+    // -------------------------------------------------------------------------
+    vscode.commands.registerCommand(
+      "foldNote.spikeFoldInput",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage("FoldNote: open a file first.");
+          return;
+        }
+
+        const result = await rangeFromInput(editor);
+        if (result === undefined) {
+          return; // cancelled
+        }
+        if (typeof result === "string") {
+          vscode.window.showWarningMessage(`FoldNote: ${result}`);
+          return;
+        }
+
+        await applyFold(editor, result);
       }
+    ),
 
-      foldingProvider.activate();
-      codeLensProvider.activateFolder();
+    // -------------------------------------------------------------------------
+    // Highlight — from selection
+    // -------------------------------------------------------------------------
+    vscode.commands.registerCommand(
+      "foldNote.spikeHighlightSelection",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage("FoldNote: open a file first.");
+          return;
+        }
 
-      const pos = new vscode.Position(0, 0);
-      editor.selection = new vscode.Selection(pos, pos);
-      await vscode.commands.executeCommand("editor.fold");
+        const result = rangeFromSelection(editor);
+        if (typeof result === "string") {
+          vscode.window.showWarningMessage(`FoldNote: ${result}`);
+          return;
+        }
 
-      decorationProvider.apply(editor);
+        const color = await pickColor();
+        if (!color) {
+          return; // cancelled
+        }
 
-      vscode.window.showInformationMessage(
-        "FoldNote spike: folded lines 1–5 with note label. ✅"
-      );
-    }),
+        applyHighlight(editor, result, color);
+      }
+    ),
 
+    // -------------------------------------------------------------------------
+    // Highlight — from input
+    // -------------------------------------------------------------------------
+    vscode.commands.registerCommand(
+      "foldNote.spikeHighlightInput",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage("FoldNote: open a file first.");
+          return;
+        }
+
+        const result = await rangeFromInput(editor);
+        if (result === undefined) {
+          return; // cancelled
+        }
+        if (typeof result === "string") {
+          vscode.window.showWarningMessage(`FoldNote: ${result}`);
+          return;
+        }
+
+        const color = await pickColor();
+        if (!color) {
+          return; // cancelled
+        }
+
+        applyHighlight(editor, result, color);
+      }
+    ),
+
+    // -------------------------------------------------------------------------
+    // Unfold — removes fold, label, and fold CodeLens
+    // -------------------------------------------------------------------------
     vscode.commands.registerCommand("foldNote.spikeUnfold", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         return;
       }
 
-      const pos = new vscode.Position(0, 0);
-      editor.selection = new vscode.Selection(pos, pos);
+      if (!foldingProvider.isActive) {
+        vscode.window.showInformationMessage(
+          "FoldNote: nothing is folded right now."
+        );
+        return;
+      }
+
+      const activeRange = foldingProvider.activeRange;
+      if (activeRange) {
+        const pos = new vscode.Position(activeRange.start, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+      }
+
       await vscode.commands.executeCommand("editor.unfold");
 
-      decorationProvider.clear(editor);
       foldingProvider.clear();
       codeLensProvider.clearFolder();
 
@@ -73,62 +202,50 @@ export function registerSpikeCommands(
       );
     }),
 
-    vscode.commands.registerCommand("foldNote.spikeRefresh", () => {
-      foldingProvider.refresh();
-      vscode.window.showInformationMessage(
-        "FoldNote spike: fired onDidChangeFoldingRanges — VS Code will re-query ranges. ✅"
-      );
-    }),
-
-    vscode.commands.registerCommand("foldNote.spikeCodeLensClicked", (kind?: string) => {
-      vscode.window.showInformationMessage(
-        `FoldNote spike: ${kind ?? "annotation"} CodeLens clicked! This will open the sidebar in future chapters. ✅`
-      );
-    }),
-
     // -------------------------------------------------------------------------
-    // Highlight spike
+    // Clear highlight — removes highlight and highlight CodeLens
     // -------------------------------------------------------------------------
-    vscode.commands.registerCommand("foldNote.spikeHighlight", async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showWarningMessage("FoldNote spike: open a file first.");
-        return;
-      }
-      if (editor.document.lineCount < 5) {
-        vscode.window.showWarningMessage(
-          "FoldNote spike: file needs at least 5 lines."
-        );
-        return;
-      }
-
-      const color = await vscode.window.showQuickPick(SPIKE_COLORS, {
-        placeHolder: "Pick a highlight color for lines 1–5",
-      });
-
-      if (!color) {
-        return; // cancelled
-      }
-
-      highlightProvider.apply(editor, color);
-      codeLensProvider.activateHighlight(color);
-
-      vscode.window.showInformationMessage(
-        `FoldNote spike: highlighted lines 1–5 in ${color}. ✅`
-      );
-    }),
-
     vscode.commands.registerCommand("foldNote.spikeClearHighlight", () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         return;
       }
 
+      if (!highlightProvider.isActive) {
+        vscode.window.showInformationMessage(
+          "FoldNote: no highlight active right now."
+        );
+        return;
+      }
+
       highlightProvider.clear(editor);
       codeLensProvider.clearHighlight();
+
       vscode.window.showInformationMessage(
-        "FoldNote spike: highlights cleared. ✅"
+        "FoldNote spike: highlight and CodeLens removed. ✅"
       );
-    })
+    }),
+
+    // -------------------------------------------------------------------------
+    // Refresh folding ranges
+    // -------------------------------------------------------------------------
+    vscode.commands.registerCommand("foldNote.spikeRefresh", () => {
+      foldingProvider.refresh();
+      vscode.window.showInformationMessage(
+        "FoldNote spike: fired onDidChangeFoldingRanges. ✅"
+      );
+    }),
+
+    // -------------------------------------------------------------------------
+    // CodeLens click handler
+    // -------------------------------------------------------------------------
+    vscode.commands.registerCommand(
+      "foldNote.spikeCodeLensClicked",
+      (kind?: string) => {
+        vscode.window.showInformationMessage(
+          `FoldNote spike: ${kind ?? "annotation"} CodeLens clicked! Will open sidebar in a future chapter. ✅`
+        );
+      }
+    )
   );
 }
