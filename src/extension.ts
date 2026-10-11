@@ -4,9 +4,13 @@ import { registerSpikeCommands } from "./commands/spike";
 import { FoldNoteProvider } from "./providers/foldingProvider";
 import { FoldNoteCodeLensProvider } from "./providers/codeLensProvider";
 import { HighlightProvider } from "./providers/highlightProvider";
+import { store } from "./storage/store";
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log("FoldNote is now active.");
+
+  // --- Chapter 2: load persisted annotations (non-blocking) ---
+  store.load(context);
 
   // --- Chapter 0: hello world ---
   registerHelloWorld(context);
@@ -41,9 +45,15 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // Dispose providers cleanly on deactivation
-  context.subscriptions.push(foldingProvider, codeLensProvider, highlightProvider);
+  context.subscriptions.push(
+    foldingProvider,
+    codeLensProvider,
+    highlightProvider,
+    store
+  );
 }
 
-export function deactivate(): void {
+export function deactivate(): Promise<void> {
   console.log("FoldNote deactivated.");
+  return store.flush();
 }
