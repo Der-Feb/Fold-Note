@@ -11,12 +11,22 @@ export class FileItem extends vscode.TreeItem {
 
   constructor(
     public readonly filePath: string,
-    public readonly annotations: Annotation[]
+    public readonly annotations: Annotation[],
+    public readonly orphaned = false
   ) {
     super(filePath, vscode.TreeItemCollapsibleState.Expanded);
-    this.description = `${annotations.length} annotation${annotations.length !== 1 ? "s" : ""}`;
-    this.iconPath = new vscode.ThemeIcon("file");
-    this.contextValue = "foldNote.file";
+    if (orphaned) {
+      this.description = "file not found";
+      this.iconPath = new vscode.ThemeIcon(
+        "error",
+        new vscode.ThemeColor("list.errorForeground")
+      );
+      this.contextValue = "foldNote.orphanedFile";
+    } else {
+      this.description = `${annotations.length} annotation${annotations.length !== 1 ? "s" : ""}`;
+      this.iconPath = new vscode.ThemeIcon("file");
+      this.contextValue = "foldNote.file";
+    }
   }
 }
 
@@ -121,7 +131,22 @@ export class AnnotationTreeProvider
     new vscode.EventEmitter<FoldNoteTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  /** Set of file paths known to be orphaned (checked asynchronously). */
+  private _orphanedFiles = new Set<string>();
+
+  constructor() {
+    // Auto-refresh when the store mutates
+    store.onChange(() => {
+      this.refresh();
+    });
+  }
+
   refresh(): void {
+    // Kick off orphan check in background; a second fire happens when done
+    this._checkOrphanedFiles().then(() => {
+      this._onDidChangeTreeData.fire();
+    });
+    // Fire immediately too so the tree updates right away
     this._onDidChangeTreeData.fire();
   }
 
@@ -136,8 +161,10 @@ export class AnnotationTreeProvider
     }
 
     if (element instanceof FileItem) {
+      if (element.orphaned) {
+        return []; // orphaned files have no children to show
+      }
       // Children of a file — top-level annotations only
-      // (nested folders appear as children of their parent AnnotationItem)
       return this._buildTopLevelAnnotations(element.filePath, element.annotations);
     }
 
@@ -147,6 +174,51 @@ export class AnnotationTreeProvider
     }
 
     return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Orphaned file detection
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Stats each tracked file path; marks missing ones as orphaned.
+   * This method is async and updates `_orphanedFiles` in place.
+   */
+  async checkOrphanedFiles(): Promise<void> {
+    await this._checkOrphanedFiles();
+  }
+
+  private async _checkOrphanedFiles(): Promise<void> {
+    const wsFolders = vscode.workspace.workspaceFolders;
+    if (!wsFolders || wsFolders.length === 0) {
+      return;
+    }
+
+    const trackedFiles = store.getTrackedFiles();
+    const newOrphans = new Set<string>();
+
+    for (const filePath of trackedFiles) {
+      // Try to resolve the file in each workspace folder
+      let found = false;
+      for (const folder of wsFolders) {
+        const stripped = filePath.startsWith(folder.name + "/")
+          ? filePath.slice(folder.name.length + 1)
+          : filePath;
+        const uri = vscode.Uri.joinPath(folder.uri, stripped);
+        try {
+          await vscode.workspace.fs.stat(uri);
+          found = true;
+          break;
+        } catch {
+          // not in this folder
+        }
+      }
+      if (!found) {
+        newOrphans.add(filePath);
+      }
+    }
+
+    this._orphanedFiles = newOrphans;
   }
 
   // ---------------------------------------------------------------------------
@@ -162,7 +234,8 @@ export class AnnotationTreeProvider
     return files
       .map((filePath) => {
         const annotations = store.getByFile(filePath);
-        return new FileItem(filePath, annotations);
+        const orphaned = this._orphanedFiles.has(filePath);
+        return new FileItem(filePath, annotations, orphaned);
       })
       .sort((a, b) => a.filePath.localeCompare(b.filePath));
   }

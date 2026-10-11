@@ -11,11 +11,16 @@ const DEBOUNCE_MS = 500;
  * - Loaded once at startup from workspaceState (non-blocking).
  * - In-memory lookups by file path and by annotation ID.
  * - Writes are debounced; a final flush happens on deactivate.
+ * - Fires `onChange` after every mutation so listeners can react.
  */
 export class AnnotationStore implements vscode.Disposable {
   private _data: StoredData = emptyStoredData();
   private _context: vscode.ExtensionContext | undefined;
   private _saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private readonly _onChange = new vscode.EventEmitter<void>();
+  /** Fires after every mutation (add, update, remove, removeFile, clearAll). */
+  readonly onChange = this._onChange.event;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -39,6 +44,7 @@ export class AnnotationStore implements vscode.Disposable {
 
   dispose(): void {
     this.flush();
+    this._onChange.dispose();
   }
 
   // ---------------------------------------------------------------------------
@@ -81,6 +87,7 @@ export class AnnotationStore implements vscode.Disposable {
     }
     this._data.files[annotation.filePath] = list;
     this._scheduleSave();
+    this._onChange.fire();
   }
 
   /** Update fields on an existing annotation. No-op if ID not found. */
@@ -97,6 +104,7 @@ export class AnnotationStore implements vscode.Disposable {
           updatedAt: new Date().toISOString(),
         };
         this._scheduleSave();
+        this._onChange.fire();
         return;
       }
     }
@@ -112,6 +120,7 @@ export class AnnotationStore implements vscode.Disposable {
           delete this._data.files[path];
         }
         this._scheduleSave();
+        this._onChange.fire();
         return;
       }
     }
@@ -122,6 +131,7 @@ export class AnnotationStore implements vscode.Disposable {
     if (this._data.files[filePath]) {
       delete this._data.files[filePath];
       this._scheduleSave();
+      this._onChange.fire();
     }
   }
 
@@ -129,6 +139,7 @@ export class AnnotationStore implements vscode.Disposable {
   clearAll(): void {
     this._data = emptyStoredData();
     this._scheduleSave();
+    this._onChange.fire();
   }
 
   // ---------------------------------------------------------------------------
