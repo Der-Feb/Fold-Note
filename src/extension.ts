@@ -11,22 +11,13 @@ import { store } from "./storage/store";
 export function activate(context: vscode.ExtensionContext): void {
   console.log("FoldNote is now active.");
 
-  // --- Chapter 2: load persisted annotations (non-blocking) ---
+  // --- Chapter 2: load persisted annotations ---
   store.load(context);
 
   // --- Chapter 0: hello world ---
   registerHelloWorld(context);
 
-  // --- Chapter 5: sidebar (created first so spike commands can reference it) ---
-  const treeProvider = new AnnotationTreeProvider();
-  const treeView = vscode.window.createTreeView("foldNote.annotationsView", {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-  registerSidebarCommands(context, treeProvider, treeView);
-  treeProvider.refresh();
-
-  // --- Chapter 1 spike providers ---
+  // --- Providers (created first so sidebar commands can reference them) ---
   const foldingProvider = new FoldNoteProvider();
   const codeLensProvider = new FoldNoteCodeLensProvider();
   const highlightProvider = new HighlightProvider();
@@ -42,6 +33,25 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // --- Chapter 5: sidebar ---
+  const treeProvider = new AnnotationTreeProvider();
+  const treeView = vscode.window.createTreeView("foldNote.annotationsView", {
+    treeDataProvider: treeProvider,
+    showCollapseAll: true,
+  });
+
+  registerSidebarCommands(
+    context,
+    treeProvider,
+    treeView,
+    highlightProvider,
+    foldingProvider,
+    codeLensProvider
+  );
+
+  treeProvider.refresh();
+
+  // --- Chapter 1 spike commands ---
   registerSpikeCommands(
     context,
     foldingProvider,

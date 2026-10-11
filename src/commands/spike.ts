@@ -48,6 +48,17 @@ export function registerSpikeCommands(
       return;
     }
 
+    // Prompt for a note (required)
+    const note = await vscode.window.showInputBox({
+      prompt: `Note for fold L${range.startLine + 1}–${range.endLine + 1}`,
+      placeHolder: "e.g. Auth helper logic",
+      validateInput: (v) =>
+        v.trim().length === 0 ? "Note cannot be empty." : undefined,
+    });
+    if (note === undefined) {
+      return; // cancelled
+    }
+
     foldingProvider.activate(range.startLine, range.endLine);
     codeLensProvider.activateFolder(range.startLine, range.endLine);
 
@@ -57,14 +68,13 @@ export function registerSpikeCommands(
       selectionLines: [range.startLine],
     });
 
-    // Write to store so sidebar shows it
     const now = new Date().toISOString();
     store.add({
       id: generateId(),
       filePath,
       range: makeLineRange(range.startLine, range.endLine),
       kind: "folder",
-      note: `Spike fold L${range.startLine + 1}–${range.endLine + 1}`,
+      note: note.trim(),
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -72,14 +82,15 @@ export function registerSpikeCommands(
     treeProvider.refresh();
 
     vscode.window.showInformationMessage(
-      `FoldNote spike: folded lines ${range.startLine + 1}–${range.endLine + 1}. ✅`
+      `FoldNote: folded L${range.startLine + 1}–${range.endLine + 1} — "${note.trim()}". ✅`
     );
   }
 
   function applyHighlight(
     editor: vscode.TextEditor,
     range: ResolvedRange,
-    color: SpikeColor
+    color: SpikeColor,
+    note: string
   ): void {
     const filePath = toWorkspacePathOrWarn(editor.document.uri);
     if (!filePath) {
@@ -89,14 +100,13 @@ export function registerSpikeCommands(
     highlightProvider.apply(editor, color, range.startLine, range.endLine);
     codeLensProvider.activateHighlight(range.startLine, range.endLine, color);
 
-    // Write to store so sidebar shows it
     const now = new Date().toISOString();
     store.add({
       id: generateId(),
       filePath,
       range: makeLineRange(range.startLine, range.endLine),
       kind: "highlight",
-      note: `Spike highlight L${range.startLine + 1}–${range.endLine + 1}`,
+      note: note.trim(),
       color,
       status: "active",
       createdAt: now,
@@ -105,7 +115,7 @@ export function registerSpikeCommands(
     treeProvider.refresh();
 
     vscode.window.showInformationMessage(
-      `FoldNote spike: highlighted lines ${range.startLine + 1}–${range.endLine + 1} in ${color}. ✅`
+      `FoldNote: highlighted L${range.startLine + 1}–${range.endLine + 1} in ${color}${note ? ` — "${note.trim()}"` : ""}. ✅`
     );
   }
 
@@ -180,7 +190,15 @@ export function registerSpikeCommands(
           return; // cancelled
         }
 
-        applyHighlight(editor, result, color);
+        const note = await vscode.window.showInputBox({
+          prompt: "Add a note (optional)",
+          placeHolder: "e.g. Important section",
+        });
+        if (note === undefined) {
+          return; // cancelled
+        }
+
+        applyHighlight(editor, result, color, note);
       }
     ),
 
@@ -210,7 +228,15 @@ export function registerSpikeCommands(
           return; // cancelled
         }
 
-        applyHighlight(editor, result, color);
+        const note = await vscode.window.showInputBox({
+          prompt: "Add a note (optional)",
+          placeHolder: "e.g. Important section",
+        });
+        if (note === undefined) {
+          return; // cancelled
+        }
+
+        applyHighlight(editor, result, color, note);
       }
     ),
 

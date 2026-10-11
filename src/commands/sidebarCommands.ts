@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import { Annotation } from "../model/annotation";
 import { store } from "../storage/store";
 import { AnnotationTreeProvider, AnnotationItem } from "../views/annotationTreeProvider";
+import { HighlightProvider } from "../providers/highlightProvider";
+import { FoldNoteProvider } from "../providers/foldingProvider";
+import { FoldNoteCodeLensProvider } from "../providers/codeLensProvider";
 
 /**
  * Commands that interact with the sidebar tree view.
@@ -14,7 +17,10 @@ import { AnnotationTreeProvider, AnnotationItem } from "../views/annotationTreeP
 export function registerSidebarCommands(
   context: vscode.ExtensionContext,
   treeProvider: AnnotationTreeProvider,
-  treeView: vscode.TreeView<vscode.TreeItem>
+  treeView: vscode.TreeView<vscode.TreeItem>,
+  highlightProvider: HighlightProvider,
+  foldingProvider: FoldNoteProvider,
+  codeLensProvider: FoldNoteCodeLensProvider
 ): void {
   context.subscriptions.push(
     // -------------------------------------------------------------------------
@@ -81,15 +87,42 @@ export function registerSidebarCommands(
     ),
 
     // -------------------------------------------------------------------------
-    // Delete — remove from store and refresh
+    // Delete — remove from store, clear any active decoration, and refresh
     // -------------------------------------------------------------------------
     vscode.commands.registerCommand(
       "foldNote.deleteAnnotation",
-      (item: AnnotationItem | Annotation) => {
+      async (item: AnnotationItem | Annotation) => {
         const annotation =
           item instanceof AnnotationItem ? item.annotation : item;
         if (!annotation) {
           return;
+        }
+
+        // Find the editor showing this file (if open)
+        const editor = vscode.window.visibleTextEditors.find((e) => {
+          const uri = e.document.uri;
+          return (
+            uri.scheme === "file" &&
+            (e.document.fileName.endsWith(annotation.filePath) ||
+              annotation.filePath.includes(
+                vscode.workspace.asRelativePath(uri)
+              ))
+          );
+        });
+
+        if (annotation.kind === "highlight" && editor) {
+          // Clear the highlight decoration from the editor
+          highlightProvider.clear(editor);
+          codeLensProvider.clearHighlight();
+        }
+
+        if (annotation.kind === "folder" && editor) {
+          // Unfold the code before removing
+          const pos = new vscode.Position(annotation.range.start.line, 0);
+          editor.selection = new vscode.Selection(pos, pos);
+          await vscode.commands.executeCommand("editor.unfold");
+          foldingProvider.clear();
+          codeLensProvider.clearFolder();
         }
 
         store.remove(annotation.id);
