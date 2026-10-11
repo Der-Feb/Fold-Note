@@ -127,7 +127,11 @@
       },
       {
         "command": "foldNote.codeLensClicked",
-        "title": "FoldNote: CodeLens Clicked"
+        "title": "FoldNote: Open Annotation in Sidebar"
+      },
+      {
+        "command": "foldNote.clearAllData",
+        "title": "FoldNote: Clear All Data"
       }
     ],
     "keybindings": [

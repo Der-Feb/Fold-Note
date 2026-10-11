@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // --- Chapter 0: hello world ---
   registerHelloWorld(context);
 
-  // --- Providers (created first so sidebar commands can reference them) ---
+  // --- Providers ---
   const foldingProvider = new FoldNoteProvider();
   const codeLensProvider = new FoldNoteCodeLensProvider();
   const highlightProvider = new HighlightProvider();
@@ -51,30 +51,10 @@ export function activate(context: vscode.ExtensionContext): void {
     codeLensProvider
   );
 
-  treeProvider.refresh();
+  // --- Chapter 3 + 6: real fold commands and CodeLens ---
+  registerFoldCommands(context, foldingProvider, codeLensProvider, treeProvider);
 
-  // --- Chapter 4: range tracker ---
-  const rangeTracker = new RangeTracker();
-
-  // Refresh sidebar and CodeLens after every document change
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeTextDocument(() => {
-      treeProvider.refresh();
-      codeLensProvider.refresh();
-      foldingProvider.refresh();
-    })
-  );
-
-  // --- Chapter 3 & 4: real fold commands ---
-  registerFoldCommands(
-    context,
-    foldingProvider,
-    codeLensProvider,
-    highlightProvider,
-    treeProvider
-  );
-
-  // --- Chapter 1 spike commands ---
+  // --- Chapter 1 spike commands (kept for testing) ---
   registerSpikeCommands(
     context,
     foldingProvider,
@@ -83,11 +63,23 @@ export function activate(context: vscode.ExtensionContext): void {
     treeProvider
   );
 
+  // --- Chapter 4: range tracker ---
+  const rangeTracker = new RangeTracker();
+
+  // Refresh CodeLens and folding ranges after every document change
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument(() => {
+      codeLensProvider.refresh();
+      foldingProvider.refresh();
+    })
+  );
+
   context.subscriptions.push(
     foldingProvider,
     codeLensProvider,
     highlightProvider,
     treeView,
+    treeProvider,
     rangeTracker,
     store
   );
