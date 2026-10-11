@@ -164,9 +164,9 @@ Goal: prove the core mechanism works before building on it. Use **hardcoded** da
 - [ ] Refresh the CodeLens whenever ranges change
 - [ ] Setting to turn the CodeLens off (the inline label remains)
 
-**❓ Ask first**
-1. Show the CodeLens only while a block is folded, or always? *Suggested: always, since it's the entry point to the sidebar.*
-2. Should highlights get a CodeLens too? *Suggested: no, folders only.*
+**Answers**
+1. Show the CodeLens always (not only while folded) — it's the entry point to the sidebar.
+2. Highlights get a CodeLens too — they are the same annotation type, only the kind differs.
 
 **Commit:** `feat: CodeLens indicator that opens the sidebar`
 
