@@ -18,6 +18,45 @@
   "main": "./dist/extension.js",
   "activationEvents": [],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "foldNote",
+          "title": "FoldNote",
+          "icon": "sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "foldNote": [
+        {
+          "id": "foldNote.annotationsView",
+          "name": "Annotations",
+          "icon": "sidebar-icon.svg",
+          "contextualTitle": "FoldNote"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "foldNote.annotationsView",
+        "contents": "No annotations yet.\n\nSelect some lines in the editor and run a FoldNote command to get started.\n\n[Open Command Palette](command:workbench.action.showCommands)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "foldNote.deleteAnnotation",
+          "when": "viewItem =~ /foldNote\\.(folder|highlight|conflicted)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "foldNote.unfoldAnnotation",
+          "when": "viewItem == foldNote.folder",
+          "group": "inline@1"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "foldNote.helloWorld",
@@ -50,6 +89,25 @@
       {
         "command": "foldNote.spikeRefresh",
         "title": "FoldNote Spike: Refresh folding ranges"
+      },
+      {
+        "command": "foldNote.refreshView",
+        "title": "FoldNote: Refresh Sidebar",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "foldNote.revealAnnotation",
+        "title": "FoldNote: Reveal Annotation"
+      },
+      {
+        "command": "foldNote.deleteAnnotation",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "foldNote.unfoldAnnotation",
+        "title": "Unfold",
+        "icon": "$(fold-up)"
       }
     ]
   },

@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import { registerHelloWorld } from "./commands/helloWorld";
 import { registerSpikeCommands } from "./commands/spike";
+import { registerSidebarCommands } from "./commands/sidebarCommands";
 import { FoldNoteProvider } from "./providers/foldingProvider";
 import { FoldNoteCodeLensProvider } from "./providers/codeLensProvider";
 import { HighlightProvider } from "./providers/highlightProvider";
+import { AnnotationTreeProvider } from "./views/annotationTreeProvider";
 import { store } from "./storage/store";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -15,28 +17,22 @@ export function activate(context: vscode.ExtensionContext): void {
   // --- Chapter 0: hello world ---
   registerHelloWorld(context);
 
-  // --- Chapter 1 spike ---
+  // --- Chapter 1 spike providers ---
   const foldingProvider = new FoldNoteProvider();
   const codeLensProvider = new FoldNoteCodeLensProvider();
   const highlightProvider = new HighlightProvider();
 
-  // Folding range provider for all file-scheme documents
   context.subscriptions.push(
     vscode.languages.registerFoldingRangeProvider(
       { scheme: "file" },
       foldingProvider
-    )
-  );
-
-  // CodeLens provider for all file-scheme documents
-  context.subscriptions.push(
+    ),
     vscode.languages.registerCodeLensProvider(
       { scheme: "file" },
       codeLensProvider
     )
   );
 
-  // Register all spike commands
   registerSpikeCommands(
     context,
     foldingProvider,
@@ -44,11 +40,25 @@ export function activate(context: vscode.ExtensionContext): void {
     highlightProvider
   );
 
-  // Dispose providers cleanly on deactivation
+  // --- Chapter 5: sidebar ---
+  const treeProvider = new AnnotationTreeProvider();
+
+  const treeView = vscode.window.createTreeView("foldNote.annotationsView", {
+    treeDataProvider: treeProvider,
+    showCollapseAll: true,
+  });
+
+  registerSidebarCommands(context, treeProvider, treeView);
+
+  // Refresh tree when store changes (will be triggered by future commands)
+  // For now, refresh once on activation to show any persisted annotations
+  treeProvider.refresh();
+
   context.subscriptions.push(
     foldingProvider,
     codeLensProvider,
     highlightProvider,
+    treeView,
     store
   );
 }
