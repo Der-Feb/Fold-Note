@@ -5,16 +5,31 @@ import { store } from "../storage/store";
  * Shows a CodeLens above every active annotation in the current document.
  * Reads directly from the store so line numbers always reflect the latest
  * tracked ranges after edits.
+ *
+ * Chapter 6 additions:
+ *  - Respects `foldNote.enableCodeLens` setting (default true).
+ *  - `toggleVisibility()` toggles a per-session override for the active file.
+ *  - Uses `foldNote.codeLensClicked` (not the spike command) for store annotations.
  */
 export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
+
+  /** Session-level visibility toggle (affects ALL files). */
+  private _visible = true;
 
   provideCodeLenses(
     document: vscode.TextDocument,
     _token: vscode.CancellationToken
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== "file") {
+      return [];
+    }
+
+    // Check the enableCodeLens setting
+    const cfg = vscode.workspace.getConfiguration("foldNote");
+    const settingEnabled = cfg.get<boolean>("enableCodeLens", true);
+    if (!settingEnabled || !this._visible) {
       return [];
     }
 
@@ -28,6 +43,8 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
       return [];
     }
 
+    const prefix = cfg.get<string>("badgePrefix", "📝 ");
+
     return annotations
       .filter((ann) => ann.range.start.line < document.lineCount)
       .map((ann) => {
@@ -39,17 +56,27 @@ export class FoldNoteCodeLensProvider implements vscode.CodeLensProvider {
         if (ann.status === "conflicted") {
           title = `⚠ conflict · "${ann.note}" · click to manage`;
         } else if (ann.kind === "folder") {
-          title = `📝 ${ann.note} · L${startLine + 1}–${endLine + 1}`;
+          title = `${prefix}${ann.note} · L${startLine + 1}–${endLine + 1}`;
         } else {
           title = `🎨 ${ann.color ?? "highlight"} · ${ann.note || ""} · L${startLine + 1}–${endLine + 1}`;
         }
 
         return new vscode.CodeLens(range, {
           title,
-          command: "foldNote.spikeCodeLensClicked",
-          arguments: [ann.kind, ann.id],
+          command: "foldNote.codeLensClicked",
+          arguments: [ann.id],
         });
       });
+  }
+
+  /** Toggle session-level visibility of all CodeLenses. */
+  toggleVisibility(): void {
+    this._visible = !this._visible;
+    this._onDidChange.fire();
+  }
+
+  get isVisible(): boolean {
+    return this._visible;
   }
 
   refresh(): void {
