@@ -34,6 +34,14 @@
       {
         "command": "foldNote.spikeRefresh",
         "title": "FoldNote Spike: Refresh folding ranges"
+      },
+      {
+        "command": "foldNote.spikeHighlight",
+        "title": "FoldNote Spike: Highlight lines 1–5"
+      },
+      {
+        "command": "foldNote.spikeClearHighlight",
+        "title": "FoldNote Spike: Clear highlights"
       }
     ]
   },
