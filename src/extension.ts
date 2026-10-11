@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { registerHelloWorld } from "./commands/helloWorld";
 import { registerSpikeCommands } from "./commands/spike";
 import { registerSidebarCommands } from "./commands/sidebarCommands";
+import { registerFoldCommands } from "./commands/foldCommands";
 import { FoldNoteProvider } from "./providers/foldingProvider";
 import { FoldNoteCodeLensProvider } from "./providers/codeLensProvider";
 import { HighlightProvider } from "./providers/highlightProvider";
@@ -62,6 +63,15 @@ export function activate(context: vscode.ExtensionContext): void {
       codeLensProvider.refresh();
       foldingProvider.refresh();
     })
+  );
+
+  // --- Chapter 3 & 4: real fold commands ---
+  registerFoldCommands(
+    context,
+    foldingProvider,
+    codeLensProvider,
+    highlightProvider,
+    treeProvider
   );
 
   // --- Chapter 1 spike commands ---
